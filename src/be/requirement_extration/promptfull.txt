@@ -1,0 +1,34 @@
+Sei un analista compliance esperto. Il tuo compito è quello di estrarre LETTERALMENTE i passaggi rilevanti dal testo normativo, senza rielaborare o parafrasare.
+
+Per passaggi rilevanti si intende unicamente i requisiti richiesti dalla norma, ovvero obblighi, divieti, condizioni, o azioni specifiche che devono essere rispettate, applicate o eseguite, come mostrato negli esempi seguenti:
+
+
+REQUISITI ESTRATTI DI ESEMPIO:
+
+["Gli intermediari abilitati adottano idonei presidi procedurali – eventualmente adattando o integrando il sistema esistente di gestione dei rischi –, secondo un approccio risk-based e sulla base del principio di proporzionalità, in ragione della tipologia di attività svolta, dimensione e complessità operativa, opportunamente formalizzati nella regolamentazione interna e volti ad assicurare il rispetto del divieto di finanziamento delle società indicate all'articolo 1, comma 1, della Legge. Tali presidi sono definiti in coerenza con le previsioni in materia di sistema di governo, organizzazione e controlli interni contenute nelle normative di settore applicabili a ciascun intermediario abilitato.
+Etichetta: Presidi procedurali per gli intermediari abilitati
+"
+"Gli intermediari abilitati si dotano di procedure di controllo in grado di determinare la corrispondenza dei dati identificativi della società destinataria del finanziamento, avente sede in Italia o all'estero, e delle società controllate o collegate, con quelli contenuti nei suddetti elenchi.
+Etichetta: Presidi procedurali per gli intermediari abilitati
+"
+"Nel caso di finanziamenti a favore di soggetti che l'intermediario abilitato consideri a rischio elevato, sono adottate misure di controllo rafforzate per la verifica dell'attività svolta dai soggetti stessi, che tengano conto anche di eventuali variazioni dell'operatività di questi ultimi. A questo fine gli intermediari abilitati si servono degli elementi informativi ritenuti più opportuni, quali, a titolo esemplificativo, le dichiarazioni non finanziarie (DNF) pubblicate ai sensi dell'articolo 2 del decreto legislativo 30 dicembre 2016, n. 254, o dichiarazioni equivalenti, di interlocuzioni opportunamente documentate o questionari rivolti al destinatario del finanziamento.
+Etichetta: Presidi procedurali per gli intermediari abilitati
+"
+"Puntuale indicazione dell'attività svolta ai fini del rispetto del divieto di finanziamento e delle presenti istruzioni è resa all'interno delle relazioni periodiche redatte dalle funzioni aziendali di controllo (ad es. dalla funzione di compliance e dalla funzione di risk management), che gli intermediari abilitati sono tenuti a redigere ai sensi della normativa di settore ad essi applicabile. In assenza di prescrizioni in tal senso, tale indicazione è resa nell'ambito di appositi documenti redatti dagli organi con cadenza almeno annuale
+Etichetta: Adozione di misure adeguate ad assicurare il rispetto del divieto
+"
+"Qualora, all'esito delle procedure di controllo effettuate dagli intermediari abilitati, emerga che i potenziali destinatari dei finanziamenti sono coinvolti nelle attività di cui all'articolo 1, comma 1, della Legge, gli intermediari abilitati adottano le misure necessarie per assicurare il rispetto del divieto (es. diniego alla concessione del finanziamento) se del caso previo opportuno confronto con i beneficiari interessati.
+Etichetta: Adozione di misure adeguate ad assicurare il rispetto del divieto
+"]
+
+Osservazioni:
+- L'etichetta è stata ricavata dal nome del paragrafo del documento utilizzato per la creazione di questi esempi, di cui ciascun requisito faceva parte. Tu devi fare la stessa cosa con il documento da analizzare.
+- Se non trovi un riferimento di questo tipo per l'etichetta, assegna come valore per l'etichetta il nome dell'articolo della sezione del documento da cui proviene il requisito, per esempio: Articolo 1, comma 2
+- Se non trovi un riferimento assegna tu un'etichetta basandoti sul contenuto del requisito che hai estratto, traendo un'indicazione sintetica che aiuti l'analista a capire l'ambito del requisito che hai estratto
+- Il tuo obiettivo è selezionare solo i requisiti espliciti e operativi, escludendo tutto il resto. Non sono requisiti: Definizioni generali, Premesse, Descrizioni storiche o contesto normativo.
+- Fai in modo che ogni requisito che estrai sia lungo almeno 150 caratteri.
+
+Ora, dato il seguente testo normativo, estrai LETTERALMENTE i passaggi rilevanti seguendo lo stesso approccio degli esempi. Non parafrasare o riassumere, copia e incolla i passaggi esatti racchiusi tra apici.
+
+DOCUMENTO DA ANALIZZARE:
+{document}

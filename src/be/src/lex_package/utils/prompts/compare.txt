@@ -1,0 +1,14 @@
+Confronta i seguenti articoli di legge e identifica:
+
+1. Le differenze principali tra i due testi
+2. Quali parti sono state aggiunte, modificate o rimosse
+3. L'impatto potenziale di queste modifiche
+4. Eventuali ambiguità o problemi che potrebbero sorgere dalle modifiche
+
+Articolo originale:
+{original_text}
+
+Articolo modificato:
+{modified_text}
+
+Fornisci un'analisi dettagliata punto per punto.

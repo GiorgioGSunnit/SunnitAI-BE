@@ -1,0 +1,178 @@
+# =============================================================================
+# .bashrc per pod aiac-be - Funzioni di test endpoint
+# =============================================================================
+
+# Prompt patata (spazio extra compensa larghezza emoji)
+PS1='🥔  \w \$ '
+
+# Colori
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# -----------------------------------------------------------------------------
+# HEALTH & STATUS
+# -----------------------------------------------------------------------------
+
+health() {
+    echo -e "${BLUE}[Health Check]${NC}"
+    curl -s http://localhost:2025/health | python -m json.tool
+}
+
+progress() {
+    echo -e "${BLUE}[Analysis Progress]${NC}"
+    curl -s http://localhost:2025/analysis-progress/ | python -m json.tool 2>/dev/null || echo "No active analysis"
+}
+
+endpoints() {
+    echo -e "${BLUE}[Available Endpoints]${NC}"
+    curl -s http://localhost:2025/openapi.json | python -c "
+import sys,json
+paths = json.load(sys.stdin)['paths']
+for path, methods in sorted(paths.items()):
+    for method in methods.keys():
+        print(f'  {method.upper():7} {path}')
+"
+}
+
+# -----------------------------------------------------------------------------
+# PDF ANALYSIS
+# -----------------------------------------------------------------------------
+
+analyze() {
+    local filename="$1"
+    if [ -z "$filename" ]; then
+        echo -e "${RED}Usage: analyze <filename.pdf>${NC}"
+        echo "Available PDFs in /tmp:"
+        ls /tmp/*.pdf 2>/dev/null | xargs -I {} basename {}
+        return 1
+    fi
+
+    local filepath="/tmp/$filename"
+    if [ ! -f "$filepath" ]; then
+        echo -e "${RED}File not found: $filepath${NC}"
+        return 1
+    fi
+
+    echo -e "${GREEN}Starting analysis on: $filename${NC}"
+    curl -s -X POST "http://localhost:2025/extract-requirements/" \
+         -F "file=@$filepath" \
+         -H "accept: application/json" | python -m json.tool
+}
+
+analyze_bg() {
+    local filename="$1"
+    if [ -z "$filename" ]; then
+        echo -e "${RED}Usage: analyze_bg <filename.pdf>${NC}"
+        return 1
+    fi
+
+    local filepath="/tmp/$filename"
+    local outfile="/tmp/result_${filename%.pdf}.json"
+
+    echo -e "${GREEN}Starting background analysis on: $filename${NC}"
+    curl -s -X POST "http://localhost:2025/extract-requirements/" \
+         -F "file=@$filepath" \
+         -o "$outfile" &
+
+    echo -e "${YELLOW}Running in background (PID: $!)${NC}"
+    echo "Output will be saved to: $outfile"
+    echo "Use 'progress' to check status, 'result $filename' to see output"
+}
+
+result() {
+    local filename="$1"
+    if [ -z "$filename" ]; then
+        echo -e "${RED}Usage: result <filename.pdf>${NC}"
+        return 1
+    fi
+    local outfile="/tmp/result_${filename%.pdf}.json"
+    if [ -f "$outfile" ]; then
+        cat "$outfile" | python -m json.tool | head -100
+    else
+        echo -e "${RED}Result file not found: $outfile${NC}"
+    fi
+}
+
+# -----------------------------------------------------------------------------
+# PDF COMPARISON
+# -----------------------------------------------------------------------------
+
+compare() {
+    local file1="$1"
+    local file2="$2"
+    local mode="${3:-emendativa}"
+
+    if [ -z "$file1" ] || [ -z "$file2" ]; then
+        echo -e "${RED}Usage: compare <file1.pdf> <file2.pdf> [mode]${NC}"
+        echo "Modes: emendativa (default), attuativa, versioning"
+        return 1
+    fi
+
+    echo -e "${GREEN}Comparing: $file1 vs $file2 (mode: $mode)${NC}"
+    curl -s -X POST "http://localhost:2025/compare-requirements/?comparisonMode=$mode" \
+         -F "file1=@/tmp/$file1" \
+         -F "file2=@/tmp/$file2" \
+         -H "accept: application/json" | python -m json.tool
+}
+
+# -----------------------------------------------------------------------------
+# UTILITIES
+# -----------------------------------------------------------------------------
+
+lspdf() {
+    echo -e "${BLUE}[PDF files in /tmp]${NC}"
+    ls -lh /tmp/*.pdf 2>/dev/null || echo "No PDF files found"
+}
+
+search() {
+    local query="$1"
+    local top="${2:-5}"
+
+    if [ -z "$query" ]; then
+        echo -e "${RED}Usage: search <query> [top_results]${NC}"
+        return 1
+    fi
+
+    echo -e "${BLUE}Searching: $query (top $top)${NC}"
+    curl -s -X POST "http://localhost:2025/search" \
+         -H "Content-Type: application/json" \
+         -d "{\"search_text\":\"$query\",\"top\":$top}" | python -m json.tool
+}
+
+# -----------------------------------------------------------------------------
+# HELP
+# -----------------------------------------------------------------------------
+
+help_aiac() {
+    echo -e "${GREEN}=== AIAC BE Test Functions ===${NC}"
+    echo ""
+    echo -e "${YELLOW}Health & Status:${NC}"
+    echo "  health        - Check service health"
+    echo "  progress      - Check analysis progress"
+    echo "  endpoints     - List all API endpoints"
+    echo ""
+    echo -e "${YELLOW}PDF Analysis:${NC}"
+    echo "  analyze <f>   - Analyze a PDF (blocking)"
+    echo "  analyze_bg <f>- Analyze in background"
+    echo "  result <f>    - Show analysis result"
+    echo ""
+    echo -e "${YELLOW}PDF Comparison:${NC}"
+    echo "  compare <f1> <f2> [mode] - Compare two PDFs"
+    echo "    modes: emendativa, attuativa, versioning"
+    echo ""
+    echo -e "${YELLOW}Utilities:${NC}"
+    echo "  lspdf         - List PDFs in /tmp"
+    echo "  search <q>    - Search documents"
+    echo ""
+}
+
+# Alias utili
+alias ll='ls -la'
+alias la='ls -la'
+
+# Messaggio di benvenuto
+echo -e "${GREEN}AIAC BE Pod - Test environment loaded${NC}"
+echo "Type 'help_aiac' for available commands"

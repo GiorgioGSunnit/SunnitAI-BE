@@ -1,0 +1,109 @@
+---
+description: Piano di sviluppo incrementale del SQL Agent
+globs: **/*.go
+alwaysApply: true
+---
+
+# Piano di Sviluppo SQL Agent
+
+## Approccio: Incrementale per Organizzazione
+
+Sviluppiamo il SQL Agent in 4 step, testando ogni espansione prima di procedere.
+
+## STEP 1: FUW (MVP) - CORRENTE
+
+**Obiettivo:** Agente funzionante per organizzazione Furness Underwriting
+
+**Componenti:**
+- ORG Detector semplificato (assume FUW di default)
+- Query Builder per vista `AI_DataModel`
+- Executor con validazione SELECT-only
+- Formattazione risultati
+
+**Vista:** `AI_DataModel` (60K ticket)
+
+**Test:** domande.json items 1-15, 41-43, 46-48
+
+**Criterio completamento:** 
+- Risponde correttamente a query base (count, filter, aggregate)
+- Gestisce date, gruppi, stati
+- Limita risultati automaticamente
+
+---
+
+## STEP 2: +IPR
+
+**Obiettivo:** Estendere a Insurance Premium con parametrizzazione vista
+
+**Componenti:**
+- ORG Detector (FUW vs IPR basato su gruppi/keywords)
+- View Selector parametrizzato
+- Query Builder per `pb_TicketsViewIpr`
+
+**Vista aggiuntiva:** `pb_TicketsViewIpr` (73K ticket)
+
+**Campi specifici IPR:** Amount, Currency, Country, ReferralReason, Brokerage, etc.
+
+**Test:** domande.json items 16-28, 44-45, 49
+
+**Criterio completamento:**
+- Rileva automaticamente org da query
+- Usa vista corretta per org
+- Gestisce campi specifici IPR
+
+---
+
+## STEP 3: +TicketHistoryView
+
+**Obiettivo:** Supportare breakdown tempo per gruppo
+
+**Componenti:**
+- Detector per query "tempo per gruppo"
+- JOIN builder con subquery pivot
+- Pattern CASE WHEN per breakdown
+
+**Vista aggiuntiva:** `TicketHistoryView` (388K righe history)
+
+**Trigger keywords:** "giorni con", "tempo in ciascun gruppo", "breakdown", "sub X gg"
+
+**Test:** Query BDX reale (cross-org con breakdown)
+
+**Criterio completamento:**
+- Genera correttamente pivot query
+- JOIN funzionante con viste principali
+- Output con colonne GG_ConBroker, GG_ConInsurer, etc.
+
+---
+
+## STEP 4: +LEX
+
+**Obiettivo:** Completare con organizzazione Legal
+
+**Componenti:**
+- ORG Detector completo (FUW/IPR/LEX)
+- Query Builder per `TicketsViewLex`
+
+**Vista aggiuntiva:** `TicketsViewLex` (1.8K ticket)
+
+**Campi specifici LEX:** PolicyNumber, Insured, Complainant, AssignamentValue, etc.
+
+**Test:** domande.json items 29-38
+
+**Criterio completamento:**
+- Rileva query LEX
+- Gestisce campi specifici legali
+
+---
+
+## Regole Durante lo Sviluppo
+
+1. **Non anticipare step futuri** - implementa solo lo step corrente
+2. **Testa prima di procedere** - usa domande.json per validare
+3. **Mantieni retrocompatibilita** - step N deve ancora funzionare dopo step N+1
+4. **Documenta decisioni** - aggiorna strategia.txt se necessario
+
+## File di Riferimento
+
+- `strategia.txt` - architettura completa e prompt
+- `domande.json` - 50 domande di test
+- `documentazione-db.txt` - struttura database completa

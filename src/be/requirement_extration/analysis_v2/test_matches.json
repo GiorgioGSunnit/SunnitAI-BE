@@ -1,0 +1,299 @@
+[
+    {
+        "Nome Documento": "8.Schema_di_Decreto_Lgs_NIS_2.pdf",
+        "Titolo Articolo": "(Oggetto) ",
+        "Pagina": 5,
+        "Identificativo Articolo": "ART. 1 ",
+        "Identificativo Comma": "3",
+        "Nome": "Articolo ART. 1  comma 3",
+        "Contenuto": "Ai fini del comma 1, il presente decreto prevede: \na) la Strategia nazionale di cybersicurezza, recante previsioni volte a garantire un livello \nelevato di sicurezza informatica; \nb) l’integrazione del quadro di gestione delle crisi informatiche, nel contesto \ndell’organizzazione nazionale per la gestione delle crisi che coinvolgono aspetti di \ncybersicurezza, di cui all’articolo 10 del decreto-legge 4 giugno 2021, n. 82, \nconvertito, con modificazioni, dalla legge 4 agosto 2021, n. 109; \nc) la conferma dell’Agenzia per la cybersicurezza nazionale quale: \n\n \n \n \n \n1) Autorità nazionale \ncompetente NIS, disciplinandone i poteri inerenti \nall’implementazione e all’attuazione del presente decreto; \n2) Punto di contatto unico NIS, assicurando il raccordo nazionale e transfrontaliero; \n3) Gruppo di intervento nazionale per la sicurezza informatica in caso di incidente in \nambito nazionale (CSIRT Italia); \nd) la designazione dell’Agenzia per la cybersicurezza nazionale, con funzioni di \ncoordinatore ai sensi dell’articolo 9, paragrafo 2, della direttiva (UE) 2022/2555, e del \nMinistero della difesa, ciascuno per gli ambiti di competenza indicati all’articolo 2, \ncomma 1, lettera g), quali Autorità nazionali di gestione delle crisi informatiche su \nvasta scala, assicurando la coerenza con il quadro nazionale esistente in materia di \ngestione generale delle crisi informatiche, ferme restando le competenze del Nucleo \nper la cybersicurezza di cui all’articolo 9 del decreto-legge 14 giugno 2021, n. 82; \ne) l’individuazione di Autorità di settore NIS che collaborano con l’Agenzia per la \ncybersicurezza nazionale, supportandone le funzioni svolte quale Autorità nazionale \ncompetente NIS e Punto di contatto unico NIS; \nf) l’indicazione dei criteri per l’individuazione dei soggetti a cui si applica il presente \ndecreto e la definizione dei relativi obblighi in materia di misure di gestione dei rischi \nper la sicurezza informatica e di notifica di incidente; \ng) l’adozione di misure in materia di cooperazione e di condivisione delle informazioni \nai fini dell’applicazione del presente decreto, in particolare, attraverso la \npartecipazione nazionale a livello dell’Unione europea: \n1) al Gruppo di cooperazione NIS tra autorità competenti NIS e tra punti di contatto \nunici degli Stati membri dell'Unione europea, nell’ottica di incrementare la fiducia \ne la collaborazione a livello unionale; \n2) alla Rete delle organizzazioni di collegamento per le crisi informatiche (EU-\nCyCLONe) al fine di sostenere la gestione coordinata a livello operativo degli \nincidenti e delle crisi cibernetiche su vasta scala e di garantire il regolare scambio \ndi informazioni pertinenti tra gli Stati membri e le istituzioni, gli organi e gli \norganismi dell'Unione europea; \n3) alla Rete di CSIRT nazionali nell'ottica di assicurare una cooperazione, sul piano \ntecnico, rapida ed efficace.",
+        "Tipo Match": "il match é un comma: nel riferimento viene indicato articolo e comma",
+        "Match Con": {
+            "Riferimenti": [],
+            "Requirements": "Se uno Stato membro designa più di un'autorità di gestione delle crisi informatiche, deve indicare quale autorità funge da coordinatore per la gestione degli incidenti di cibersicurezza.",
+            "Core Text": "Se uno Stato membro designa o istituisce più di un'autorità di gestione delle crisi informatiche ai sensi del paragrafo 1, esso indica chiaramente quale di tali autorità deve fungere da coordinatore per la gestione di incidenti e crisi di cibersicurezza su vasta scala.",
+            "Pattern Type": "obbligo",
+            "Titolo Articolo": "Quadri nazionali di gestione delle crisi informatiche",
+            "Contenuto": "Se uno Stato membro designa o istituisce più di un'autorità di gestione delle crisi informatiche ai sensi del \nparagrafo 1, esso indica chiaramente quale di tali autorità deve fungere da coordinatore per la gestione di incidenti e crisi di \ncibersicurezza su vasta scala.",
+            "Identificativo Comma": "2",
+            "Nome documento": "7.Direttiva_2022-2555_NIS2.pdf",
+            "Identificativo Articolo": "Articolo 9",
+            "Nome": "Articolo Articolo 9 Comma 2"
+        }
+    },
+    {
+        "Nome Documento": "8.Schema_di_Decreto_Lgs_NIS_2.pdf",
+        "Titolo Articolo": " ",
+        "Pagina": 20,
+        "Identificativo Articolo": "ART.  10 ",
+        "Identificativo Comma": "2",
+        "Nome": "Articolo ART.  10  comma 2",
+        "Contenuto": "L'Agenzia per la cybersicurezza nazionale è il Punto di contatto unico NIS di cui \nall’articolo 8, paragrafo 3, della direttiva (UE) 2022/2555, svolgendo una funzione di \ncollegamento per garantire la cooperazione transfrontaliera delle autorità nazionali con le \nautorità pertinenti degli altri Stati membri, la Commissione e l'ENISA.",
+        "Tipo Match": "il match é un comma: nel riferimento viene indicato articolo e comma",
+        "Match Con": {
+            "Riferimenti": [],
+            "Requirements": "Ogni Stato membro deve designare un punto di contatto unico, che può coincidere con l'autorità competente.",
+            "Core Text": "Ogni Stato membro designa o istituisce un punto di contatto unico. Se uno Stato membro designa o istituisce soltanto un'autorità competente a norma del paragrafo 1, quest'ultima è anche il punto di contatto unico per tale Stato membro.",
+            "Pattern Type": "obbligo",
+            "Titolo Articolo": "Autorità competenti e punti di contatto unici",
+            "Contenuto": "Ogni Stato membro designa o istituisce un punto di contatto unico. Se uno Stato membro designa o istituisce \nsoltanto un'autorità competente a norma del paragrafo 1, quest'ultima è anche il punto di contatto unico per tale Stato \nmembro.",
+            "Identificativo Comma": "3",
+            "Nome documento": "7.Direttiva_2022-2555_NIS2.pdf",
+            "Identificativo Articolo": "Articolo 8",
+            "Nome": "Articolo Articolo 8 Comma 3"
+        }
+    },
+    {
+        "Nome Documento": "8.Schema_di_Decreto_Lgs_NIS_2.pdf",
+        "Titolo Articolo": "(Autorità di settore NIS) ",
+        "Pagina": 21,
+        "Identificativo Articolo": "ART.  11 ",
+        "Identificativo Comma": "4",
+        "Nome": "Articolo ART.  11  comma 4",
+        "Contenuto": "Le Autorità di settore NIS, per i rispettivi settori di competenza ai fini di cui al comma 1, \nprocedono, in particolare: \na) alla verifica dell’elenco dei soggetti di cui all’articolo 7, comma 2; \nb) al supporto nell’individuazione dei soggetti essenziali e dei soggetti importanti ai sensi \ndegli articoli 3 e 6, in particolare identificando i soggetti essenziali e i soggetti \nimportanti di cui ai commi 8, 9 e 10 dell’articolo 3; \nc) all’individuazione dei soggetti a cui si applicano le deroghe di cui all’articolo 3, \ncomma 4; \nd) al supporto per le funzioni e le attività di regolamentazione di cui al presente decreto \nsecondo le modalità di cui all’articolo 40; \ne) all’elaborazione dei contributi per la relazione annuale di cui all’articolo 12, comma \n5; \nf) all’istituzione e al coordinamento dei tavoli settoriali, al fine di contribuire all’efficace \ne coerente attuazione settoriale del presente decreto nonché al relativo monitoraggio. \nPer la partecipazione ai tavoli settoriali non sono previsti gettoni di presenza, \ncompensi, rimborsi di spese o emolumenti comunque denominati; \ng) alla partecipazione alle attività settoriali del Gruppo di Cooperazione NIS nonché dei \nconsessi e delle iniziative a livello di Unione europea relativi all’attuazione della \ndirettiva (UE) 2022/2555.",
+        "Tipo Match": "il match é un comma: nel riferimento viene indicato articolo e comma",
+        "Match Con": {
+            "Riferimenti": [],
+            "Requirements": "Gli Stati membri devono adottare misure strategiche per la cibersicurezza, inclusi requisiti per prodotti e servizi TIC, gestione delle vulnerabilità e promozione della cibersicurezza.",
+            "Core Text": "Nell'ambito della strategia nazionale per la cibersicurezza, gli Stati membri adottano in particolare misure strategiche riguardanti: a) la cibersicurezza nella catena di approvvigionamento dei prodotti e dei servizi TIC utilizzati da soggetti per la fornitura dei loro servizi; b) l'inclusione e la definizione di requisiti concernenti la cibersicurezza per i prodotti e i servizi TIC negli appalti pubblici, compresi i requisiti relativi alla certificazione della cibersicurezza, alla cifratura e l'utilizzo di prodotti di cibersicurezza open source; c) la gestione delle vulnerabilità, ivi comprese la promozione e l'agevolazione della divulgazione coordinata delle vulnerabilità ai sensi dell'articolo 12, paragrafo 1; d) il sostegno della disponibilità generale, dell'integrità e della riservatezza del carattere fondamentale pubblico di una rete internet aperta, compresa, se del caso, la cibersicurezza dei cavi di comunicazione sottomarini; e) la promozione dello sviluppo e dell'integrazione di tecnologie avanzate pertinenti miranti ad attuare misure di avanguardia nella gestione dei rischi di cibersicurezza; f) la promozione e lo sviluppo di attività di istruzione, formazione e sensibilizzazione, di competenze e di iniziative di ricerca e sviluppo in materia di cibersicurezza, nonché orientamenti sulle buone pratiche e sui controlli concernenti l'igiene informatica, destinati ai cittadini, ai portatori di interessi e ai soggetti; g) il sostegno agli istituti accademici e di ricerca volto a sviluppare, rafforzare e promuovere la diffusione di strumenti di cibersicurezza e di infrastrutture di rete sicure; h) la messa a punto di procedure pertinenti e strumenti adeguati di condivisione delle informazioni per sostenere la condivisione volontaria di informazioni sulla cibersicurezza tra soggetti, nel rispetto del diritto dell'Unione; i) il rafforzamento dei valori di riferimento relativi alla ciberresilienza e all'igiene informatica delle PMI, in particolare quelle escluse dall'ambito di applicazione della presente direttiva, fornendo orientamenti e sostegno facilmente accessibili per le loro esigenze specifiche; j) la promozione di una protezione informatica attiva.",
+            "Pattern Type": "obbligo",
+            "Titolo Articolo": "Strategia nazionale per la cibersicurezza",
+            "Contenuto": "Nell'ambito della strategia nazionale per la cibersicurezza, gli Stati membri adottano in particolare misure strategiche \nriguardanti:\na) la cibersicurezza nella catena di approvvigionamento dei prodotti e dei servizi TIC utilizzati da soggetti per la fornitura \ndei loro servizi;\nb) l'inclusione e la definizione di requisiti concernenti la cibersicurezza per i prodotti e i servizi TIC negli appalti pubblici, \ncompresi i requisiti relativi alla certificazione della cibersicurezza, alla cifratura e l'utilizzo di prodotti di cibersicurezza \nopen source;\nc) la gestione delle vulnerabilità, ivi comprese la promozione e l'agevolazione della divulgazione coordinata delle \nvulnerabilità ai sensi dell'articolo 12, paragrafo 1;\nd) il sostegno della disponibilità generale, dell'integrità e della riservatezza del carattere fondamentale pubblico di una rete \ninternet aperta, compresa, se del caso, la cibersicurezza dei cavi di comunicazione sottomarini;\ne) la promozione dello sviluppo e dell'integrazione di tecnologie avanzate pertinenti miranti ad attuare misure di \navanguardia nella gestione dei rischi di cibersicurezza;\nf)\nla promozione e lo sviluppo di attività di istruzione, formazione e sensibilizzazione, di competenze e di iniziative di \nricerca e sviluppo in materia di cibersicurezza, nonché orientamenti sulle buone pratiche e sui controlli concernenti \nl'igiene informatica, destinati ai cittadini, ai portatori di interessi e ai soggetti;\nIT\nL 333/115  \n\ng) il sostegno agli istituti accademici e di ricerca volto a sviluppare, rafforzare e promuovere la diffusione di strumenti di \ncibersicurezza e di infrastrutture di rete sicure;\nh) la messa a punto di procedure pertinenti e strumenti adeguati di condivisione delle informazioni per sostenere la \ncondivisione volontaria di informazioni sulla cibersicurezza tra soggetti, nel rispetto del diritto dell'Unione;\ni)\nil rafforzamento dei valori di riferimento relativi alla ciberresilienza e all'igiene informatica delle PMI, in particolare \nquelle escluse dall'ambito di applicazione della presente direttiva, fornendo orientamenti e sostegno facilmente \naccessibili per le loro esigenze specifiche;\nj)\nla promozione di una protezione informatica attiva.",
+            "Identificativo Comma": "2",
+            "Nome documento": "7.Direttiva_2022-2555_NIS2.pdf",
+            "Identificativo Articolo": "Articolo 7",
+            "Nome": "Articolo Articolo 7 Comma 2"
+        }
+    },
+    {
+        "Nome Documento": "8.Schema_di_Decreto_Lgs_NIS_2.pdf",
+        "Titolo Articolo": "(Autorità di settore NIS) ",
+        "Pagina": 21,
+        "Identificativo Articolo": "ART.  11 ",
+        "Identificativo Comma": "4",
+        "Nome": "Articolo ART.  11  comma 4",
+        "Contenuto": "Le Autorità di settore NIS, per i rispettivi settori di competenza ai fini di cui al comma 1, \nprocedono, in particolare: \na) alla verifica dell’elenco dei soggetti di cui all’articolo 7, comma 2; \nb) al supporto nell’individuazione dei soggetti essenziali e dei soggetti importanti ai sensi \ndegli articoli 3 e 6, in particolare identificando i soggetti essenziali e i soggetti \nimportanti di cui ai commi 8, 9 e 10 dell’articolo 3; \nc) all’individuazione dei soggetti a cui si applicano le deroghe di cui all’articolo 3, \ncomma 4; \nd) al supporto per le funzioni e le attività di regolamentazione di cui al presente decreto \nsecondo le modalità di cui all’articolo 40; \ne) all’elaborazione dei contributi per la relazione annuale di cui all’articolo 12, comma \n5; \nf) all’istituzione e al coordinamento dei tavoli settoriali, al fine di contribuire all’efficace \ne coerente attuazione settoriale del presente decreto nonché al relativo monitoraggio. \nPer la partecipazione ai tavoli settoriali non sono previsti gettoni di presenza, \ncompensi, rimborsi di spese o emolumenti comunque denominati; \ng) alla partecipazione alle attività settoriali del Gruppo di Cooperazione NIS nonché dei \nconsessi e delle iniziative a livello di Unione europea relativi all’attuazione della \ndirettiva (UE) 2022/2555.",
+        "Tipo Match": "il match é un comma: nel riferimento viene indicato articolo e comma",
+        "Match Con": {
+            "Riferimenti": [
+                {
+                    "n_articolo": "3",
+                    "n_paragrafo": "null",
+                    "nome_documento": "Direttiva",
+                    "codice_documento": "L 333/110"
+                }
+            ],
+            "Requirements": "Gli Stati membri devono obbligare le entità a presentare informazioni specifiche alle autorità competenti e a notificare eventuali modifiche entro due settimane.",
+            "Core Text": "Ai fini della compilazione dell'elenco di cui al paragrafo 3, gli Stati membri impongono alle entità di cui a tale paragrafo di presentare alle autorità competenti almeno le informazioni seguenti: a) il proprio nome; b) l'indirizzo e i recapiti aggiornati, compresi gli indirizzi e-mail, le serie di IP e i numeri di telefono; c) se del caso, i settori e sottosettori pertinenti di cui all'allegato I o II; e d) se del caso, un elenco degli Stati membri in cui forniscono servizi che rientrano nell'ambito di applicazione della presente direttiva.",
+            "Pattern Type": "obbligo",
+            "Titolo Articolo": "Soggetti essenziali e importanti",
+            "Contenuto": "Ai fini della compilazione dell'elenco di cui al paragrafo 3, gli Stati membri impongono alle entità di cui a tale \nparagrafo di presentare alle autorità competenti almeno le informazioni seguenti:\na) il proprio nome;\nb) l'indirizzo e i recapiti aggiornati, compresi gli indirizzi e-mail, le serie di IP e i numeri di telefono;\nc) se del caso, i settori e sottosettori pertinenti di cui all'allegato I o II; e\nd) se del caso, un elenco degli Stati membri in cui forniscono servizi che rientrano nell'ambito di applicazione della \npresente direttiva.\nI soggetti di cui al paragrafo 3 notificano tempestivamente qualsiasi modifica delle informazioni trasmesse a norma del \nprimo comma del presente paragrafo e in ogni caso entro due settimane dalla data della modifica.\nLa Commissione, assistita dall'Agenzia dell'Unione europea per la cibersicurezza (ENISA), fornisce senza indebito ritardo \norientamenti e modelli relativi agli obblighi di cui al presente paragrafo.\nIT\nL 333/110 \n\nGli Stati membri possono istituire meccanismi nazionali che consentano alle entità di registrarsi.",
+            "Identificativo Comma": "4",
+            "Nome documento": "7.Direttiva_2022-2555_NIS2.pdf",
+            "Identificativo Articolo": "Articolo 3",
+            "Nome": "Articolo Articolo 3 Comma 4"
+        }
+    },
+    {
+        "Nome Documento": "8.Schema_di_Decreto_Lgs_NIS_2.pdf",
+        "Titolo Articolo": "(Quadro nazionale di gestione delle crisi informatiche) ",
+        "Pagina": 24,
+        "Identificativo Articolo": "ART.  13 ",
+        "Identificativo Comma": "1",
+        "Nome": "Articolo ART.  13  comma 1",
+        "Contenuto": "L’Agenzia per la cybersicurezza nazionale, con funzioni di coordinatore ai sensi \ndell’articolo 9, paragrafo 2, della direttiva (UE) 2022/2555, e il Ministero della difesa sono \nindividuati quali Autorità nazionali di gestione delle crisi informatiche, ciascuno per gli \nambiti di competenza di cui all’articolo 2, comma 1, lettera g).",
+        "Tipo Match": "il match é un comma: nel riferimento viene indicato articolo e comma",
+        "Match Con": {
+            "Riferimenti": [],
+            "Requirements": "Se uno Stato membro designa più di un'autorità di gestione delle crisi informatiche, deve indicare quale autorità funge da coordinatore per la gestione degli incidenti di cibersicurezza.",
+            "Core Text": "Se uno Stato membro designa o istituisce più di un'autorità di gestione delle crisi informatiche ai sensi del paragrafo 1, esso indica chiaramente quale di tali autorità deve fungere da coordinatore per la gestione di incidenti e crisi di cibersicurezza su vasta scala.",
+            "Pattern Type": "obbligo",
+            "Titolo Articolo": "Quadri nazionali di gestione delle crisi informatiche",
+            "Contenuto": "Se uno Stato membro designa o istituisce più di un'autorità di gestione delle crisi informatiche ai sensi del \nparagrafo 1, esso indica chiaramente quale di tali autorità deve fungere da coordinatore per la gestione di incidenti e crisi di \ncibersicurezza su vasta scala.",
+            "Identificativo Comma": "2",
+            "Nome documento": "7.Direttiva_2022-2555_NIS2.pdf",
+            "Identificativo Articolo": "Articolo 9",
+            "Nome": "Articolo Articolo 9 Comma 2"
+        }
+    },
+    {
+        "Nome Documento": "8.Schema_di_Decreto_Lgs_NIS_2.pdf",
+        "Titolo Articolo": "(Rete delle organizzazioni di collegamento per le crisi informatiche - EU-CyCLONe) ",
+        "Pagina": 33,
+        "Identificativo Articolo": "ART.  19 ",
+        "Identificativo Comma": "2",
+        "Nome": "Articolo ART.  19  comma 2",
+        "Contenuto": "Ai fini del comma 1, l’Autorità nazionale di gestione delle crisi informatiche contribuisce \na: \na) aumentare il livello di preparazione per la gestione di incidenti e crisi informatiche su \nvasta scala; \nb) sviluppare una conoscenza situazionale condivisa in merito agli incidenti e alle crisi \ninformatiche su vasta scala; \nc) valutare le conseguenze e l'impatto degli incidenti e delle crisi informatiche su vasta \nscala e proporre possibili misure di attenuazione; \nd) coordinare la gestione degli incidenti e delle crisi informatiche su vasta scala e \nsostenere il processo decisionale a livello politico in merito a tali incidenti e crisi; \ne) discutere, su richiesta di uno Stato membro interessato, i piani nazionali di risposta agli \nincidenti e alle crisi informatiche su vasta scala di cui all'articolo 9, paragrafo 4, della \ndirettiva (UE) 2022/2555; \nf) supportare la collaborazione con il Gruppo di cooperazione NIS al fine di aggiornarlo \nin merito alla gestione degli incidenti e delle crisi informatiche su vasta scala, nonché \nin merito alle tendenze, concentrandosi in particolare sul relativo impatto sui soggetti \nessenziali e sui soggetti importanti; \ng) cooperare con la Rete di CSIRT nazionali; \nh) elaborare la relazione al Parlamento europeo e al Consiglio sulla valutazione del lavoro \ndella Rete di cui all’articolo 16, paragrafo 7, della direttiva (UE) 2022/2555.",
+        "Tipo Match": "il match é un comma: nel riferimento viene indicato articolo e comma",
+        "Match Con": {
+            "Riferimenti": [],
+            "Requirements": "Ogni Stato membro deve adottare un piano nazionale per la gestione degli incidenti e delle crisi di cibersicurezza, definendo obiettivi, responsabilità e procedure.",
+            "Core Text": "Ogni Stato membro adotta un piano nazionale di risposta agli incidenti e alle crisi di cibersicurezza su vasta scala in cui sono stabiliti gli obiettivi e le modalità della gestione degli incidenti e delle crisi di cibersicurezza su vasta scala.",
+            "Pattern Type": "obbligo",
+            "Titolo Articolo": "Quadri nazionali di gestione delle crisi informatiche",
+            "Contenuto": "Ogni Stato membro adotta un piano nazionale di risposta agli incidenti e alle crisi di cibersicurezza su vasta scala in \ncui sono stabiliti gli obiettivi e le modalità della gestione degli incidenti e delle crisi di cibersicurezza su vasta scala. In tale \npiano sono definiti, in particolare:\na) gli obiettivi delle misure e delle attività nazionali di preparazione;\nb) i compiti e le responsabilità delle autorità di gestione delle crisi informatiche;\nc) le procedure di gestione delle crisi informatiche, tra cui la loro integrazione nel quadro nazionale generale di gestione \ndelle crisi e i canali di scambio di informazioni;\nd) le misure nazionali di preparazione, comprese le esercitazioni e le attività di formazione;\ne) i pertinenti portatori di interessi del settore pubblico e privato e le infrastrutture coinvolte;\nf)\nle procedure nazionali e gli accordi tra gli organismi e le autorità nazionali pertinenti al fine di garantire il sostegno e la \npartecipazione effettivi dello Stato membro alla gestione coordinata degli incidenti e delle crisi di cibersicurezza su vasta \nscala a livello dell'Unione.",
+            "Identificativo Comma": "4",
+            "Nome documento": "7.Direttiva_2022-2555_NIS2.pdf",
+            "Identificativo Articolo": "Articolo 9",
+            "Nome": "Articolo Articolo 9 Comma 4"
+        }
+    },
+    {
+        "Nome Documento": "8.Schema_di_Decreto_Lgs_NIS_2.pdf",
+        "Titolo Articolo": "(Rete di CSIRT nazionali) ",
+        "Pagina": 33,
+        "Identificativo Articolo": "ART.  20 ",
+        "Identificativo Comma": "4",
+        "Nome": "Articolo ART.  20  comma 4",
+        "Contenuto": "Il CSIRT Italia, ai fini del comma 1, contribuisce a: \na) scambiare informazioni per quanto riguarda le capacità dei CSIRT; \nb) agevolare, ove possibile, la condivisione, il trasferimento e lo scambio di tecnologia e \ndelle misure, delle politiche, degli strumenti, dei processi, delle migliori pratiche e dei \nquadri pertinenti fra i CSIRT nazionali; \nc) scambiare, su richiesta di un CSIRT nazionale di un altro Stato membro \npotenzialmente interessato da un incidente, informazioni relative a tale incidente, alle \nminacce informatiche, ai rischi e alle vulnerabilità associate; \nd) scambiare informazioni in merito alle pubblicazioni e alle raccomandazioni in materia \ndi sicurezza informatica; \ne) garantire l'interoperabilità per quanto riguarda le specifiche e i protocolli per lo \nscambio di informazioni; \nf) su richiesta di un membro della Rete di CSIRT nazionali potenzialmente interessato \nda un incidente, scambiare e discutere informazioni non sensibili sul piano \ncommerciale connesse a tale incidente, ai rischi e alle vulnerabilità associati, ad \neccezione dei casi in cui lo scambio di informazioni potrebbe compromettere l'indagine \nsull'incidente; \ng) su richiesta di un membro della Rete di CSIRT nazionali, discutere e, ove possibile, \nattuare una risposta coordinata a un incidente identificato nella giurisdizione di tale \nStato membro; \nh) fornire assistenza ai CSIRT nazionali di altri Stati membri nel far fronte a incidenti che \ninteressano due o più Stati membri; \ni) cooperare e scambiare migliori pratiche con i CSIRT nazionali designati dagli altri \nStati membri in qualità di coordinatori ai sensi dell'articolo 12 della direttiva (UE) \n2022/2555, nonché fornire loro assistenza per quanto riguarda la gestione della \ndivulgazione coordinata di vulnerabilità che potrebbero avere un impatto significativo \nsu soggetti in più di uno Stato membro; \nl) discutere e individuare ulteriori forme di cooperazione operativa, anche in relazione a: \n1) categorie di minacce informatiche e incidenti; \npreallarmi; \n2) assistenza reciproca; \n3) principi e modalità di coordinamento in risposta a rischi e incidenti transfrontalieri; \n4) contributi al piano nazionale di risposta agli incidenti e alle crisi informatiche su \nvasta scala di cui all’articolo 13, comma 3, su richiesta di uno Stato membro; \nm)  su richiesta di un membro della Rete di CSIRT nazionali, discutere le capacità e lo \nstato di preparazione del CSIRT nazionale richiedente; \nn) cooperare e scambiare informazioni con i centri operativi di sicurezza informatica \nregionali e a livello dell'Unione europea, al fine di migliorare la consapevolezza \nsituazionale comune sugli incidenti e le minacce informatiche a livello dell'Unione \neuropea; \n\n \n \n \n \no) se del caso, discutere le relazioni sulle revisioni tra pari di cui all'articolo 21; \np) scambiare informazioni pertinenti per quanto riguarda gli incidenti, i quasi-incidenti, \nle minacce informatiche, i rischi e le vulnerabilità; \nq) informare il Gruppo di cooperazione NIS sulle proprie attività e sulle ulteriori forme \ndi cooperazione operativa discusse a norma della lettera i) e, se necessario, chiedere \norientamenti non vincolanti in merito; \nr) fare il punto sui risultati delle esercitazioni di sicurezza informatica, comprese quelle \norganizzate dall’ENISA; \ns) fornire orientamenti non vincolanti volti ad agevolare la convergenza delle pratiche \noperative in relazione all’applicazione delle disposizioni del presente articolo in \nmateria di cooperazione operativa.",
+        "Tipo Match": "il match é un comma: nel riferimento viene indicato articolo e comma",
+        "Match Con": {
+            "Riferimenti": [
+                {
+                    "n_articolo": "1",
+                    "n_paragrafo": "1",
+                    "nome_documento": "Regolamento (UE) 2022/2555",
+                    "codice_documento": "2022/2555"
+                }
+            ],
+            "Requirements": "Ogni Stato membro deve designare un CSIRT come coordinatore per la divulgazione delle vulnerabilità, garantendo l'interazione tra chi segnala e i fornitori di servizi TIC.",
+            "Core Text": "Ogni Stato membro designa uno dei propri CSIRT come coordinatore ai fini della divulgazione coordinata delle vulnerabilità.",
+            "Pattern Type": "obbligo",
+            "Titolo Articolo": "Divulgazione coordinata delle vulnerabilità e banca dati europea delle vulnerabilità",
+            "Contenuto": "Ogni Stato membro designa uno dei propri CSIRT come coordinatore ai fini della divulgazione coordinata delle \nvulnerabilità. Il CSIRT designato agisce da intermediario di fiducia agevolando, se necessario, l'interazione tra la persona \nfisica o giuridica che segnala la vulnerabilità e il fabbricante o fornitore di servizi TIC o prodotti TIC potenzialmente \nvulnerabili, su richiesta di una delle parti. I compiti del CSIRT designato come coordinatore comprendono:\na) l'individuazione e il contatto dei soggetti interessati;\nb) l'assistenza alle persone fisiche o giuridiche che segnalano una vulnerabilità, e\nc) la negoziazione dei tempi di divulgazione e la gestione delle vulnerabilità che interessano più soggetti.\nGli Stati membri provvedono affinché le persone fisiche o giuridiche possano segnalare in forma anonima, qualora lo \nrichiedano, una vulnerabilità al CSIRT designato come coordinatore. Il CSIRT designato come coordinatore garantisce lo \nsvolgimento di diligenti azioni per dare seguito alla segnalazione di vulnerabilità e assicura l'anonimato della persona fisica \no giuridica segnalante. Se la vulnerabilità segnalata è suscettibile di avere un impatto significativo su soggetti in più di uno \nStato membro, il CSIRT designato di ciascuno Stato membro interessato coopera, se del caso, con altri CSIRT designati in \nqualità di coordinatori nell'ambito della rete di CSIRT.\nIT\nL 333/119",
+            "Identificativo Comma": "1",
+            "Nome documento": "7.Direttiva_2022-2555_NIS2.pdf",
+            "Identificativo Articolo": "Articolo 12",
+            "Nome": "Articolo Articolo 12 Comma 1"
+        }
+    },
+    {
+        "Nome Documento": "8.Schema_di_Decreto_Lgs_NIS_2.pdf",
+        "Titolo Articolo": "(Procedura di revisione tra pari) ",
+        "Pagina": 35,
+        "Identificativo Articolo": "ART.  21 ",
+        "Identificativo Comma": "1",
+        "Nome": "Articolo ART.  21  comma 1",
+        "Contenuto": "L’Autorità nazionale competente NIS può partecipare alla procedura di revisione tra pari, \ndi cui all’articolo 19 della direttiva (UE) 2022/2555, nel quadro della metodologia di cui \nall’articolo 18, comma 4, lettera m), del presente decreto: \na) richiedendo l’esecuzione di una revisione tra pari in relazione all’attuazione della \ndirettiva (UE) 2022/2555 a livello nazionale; \nb) indicando uno o più rappresentanti dell’Agenzia per la cybersicurezza nazionale o \ndelle Autorità di settore NIS quali esperti di sicurezza informatica, di cui all’articolo \n19, paragrafo 2, della direttiva (UE) 2022/2555, per eseguire revisioni tra pari presso \naltri Stati membri, su richiesta di questi ultimi, nel rispetto dei codici di condotta di cui \nall’articolo 18, comma 4, lettera m), del presente decreto. Eventuali rischi di conflitto \ndi interessi riguardanti gli esperti di sicurezza informatica designati sono condivisi con \ngli altri Stati membri, il Gruppo di cooperazione NIS, la Commissione europea e \nl'ENISA prima dell'inizio della revisione tra pari.",
+        "Tipo Match": "il match é un comma: nel riferimento viene indicato articolo e comma",
+        "Match Con": {
+            "Riferimenti": [
+                {
+                    "n_articolo": "1",
+                    "n_paragrafo": "1",
+                    "nome_documento": "Regolamento (UE) 333/2019",
+                    "codice_documento": "2019/333"
+                }
+            ],
+            "Requirements": "Il comma stabilisce i criteri che gli Stati membri devono seguire per designare esperti di cibersicurezza per le revisioni tra pari, garantendo che siano obiettivi, non discriminatori, equi e trasparenti.",
+            "Core Text": "La metodologia di cui al paragrafo 1 comprende criteri obiettivi, non discriminatori, equi e trasparenti sulla base dei quali gli Stati membri designano esperti di cibersicurezza idonei a eseguire le revisioni tra pari.",
+            "Pattern Type": "obbligo",
+            "Titolo Articolo": "Revisioni tra pari",
+            "Contenuto": "La metodologia di cui al paragrafo 1 comprende criteri obiettivi, non discriminatori, equi e trasparenti sulla base dei \nquali gli Stati membri designano esperti di cibersicurezza idonei a eseguire le revisioni tra pari. La Commissione e l'ENISA \npartecipano alle revisioni tra pari in qualità di osservatori.\nIT\nL 333/125",
+            "Identificativo Comma": "2",
+            "Nome documento": "7.Direttiva_2022-2555_NIS2.pdf",
+            "Identificativo Articolo": "Articolo 19",
+            "Nome": "Articolo Articolo 19 Comma 2"
+        }
+    },
+    {
+        "Nome Documento": "8.Schema_di_Decreto_Lgs_NIS_2.pdf",
+        "Titolo Articolo": "(Comunicazioni all’Unione europea) ",
+        "Pagina": 36,
+        "Identificativo Articolo": "ART.  22 ",
+        "Identificativo Comma": "1",
+        "Nome": "Articolo ART.  22  comma 1",
+        "Contenuto": "Successivamente alla data di entrata in vigore del presente decreto, la Presidenza del \nConsiglio dei ministri notifica tempestivamente alla Commissione europea la conferma \ndell'Agenzia per la cybersicurezza nazionale quale Autorità nazionale competente NIS e \nquale Punto di contatto unico NIS, nonché la designazione dell’Agenzia per la \ncybersicurezza nazionale, con funzioni di coordinatore ai sensi dell’articolo 9, paragrafo \n2, della direttiva (UE) 2022/2555, e del Ministero della difesa, quali Autorità nazionali di \ngestione delle crisi informatiche, e i relativi ambiti di competenza come indicati \n\n \n \n \n \nall’articolo 2, comma 1, lettera g). Successivamente, ogni ulteriore modifica a tali \ndesignazioni o compiti è notificata, senza ingiustificato ritardo, alla Commissione \neuropea. Alle designazioni sono assicurate idonee forme di pubblicità.",
+        "Tipo Match": "il match é un comma: nel riferimento viene indicato articolo e comma",
+        "Match Con": {
+            "Riferimenti": [],
+            "Requirements": "Se uno Stato membro designa più di un'autorità di gestione delle crisi informatiche, deve indicare quale autorità funge da coordinatore per la gestione degli incidenti di cibersicurezza.",
+            "Core Text": "Se uno Stato membro designa o istituisce più di un'autorità di gestione delle crisi informatiche ai sensi del paragrafo 1, esso indica chiaramente quale di tali autorità deve fungere da coordinatore per la gestione di incidenti e crisi di cibersicurezza su vasta scala.",
+            "Pattern Type": "obbligo",
+            "Titolo Articolo": "Quadri nazionali di gestione delle crisi informatiche",
+            "Contenuto": "Se uno Stato membro designa o istituisce più di un'autorità di gestione delle crisi informatiche ai sensi del \nparagrafo 1, esso indica chiaramente quale di tali autorità deve fungere da coordinatore per la gestione di incidenti e crisi di \ncibersicurezza su vasta scala.",
+            "Identificativo Comma": "2",
+            "Nome documento": "7.Direttiva_2022-2555_NIS2.pdf",
+            "Identificativo Articolo": "Articolo 9",
+            "Nome": "Articolo Articolo 9 Comma 2"
+        }
+    },
+    {
+        "Nome Documento": "8.Schema_di_Decreto_Lgs_NIS_2.pdf",
+        "Titolo Articolo": "(Comunicazioni all’Unione europea) ",
+        "Pagina": 36,
+        "Identificativo Articolo": "ART.  22 ",
+        "Identificativo Comma": "1",
+        "Nome": "Articolo ART.  22  comma 1",
+        "Contenuto": "Successivamente alla data di entrata in vigore del presente decreto, la Presidenza del \nConsiglio dei ministri notifica tempestivamente alla Commissione europea la conferma \ndell'Agenzia per la cybersicurezza nazionale quale Autorità nazionale competente NIS e \nquale Punto di contatto unico NIS, nonché la designazione dell’Agenzia per la \ncybersicurezza nazionale, con funzioni di coordinatore ai sensi dell’articolo 9, paragrafo \n2, della direttiva (UE) 2022/2555, e del Ministero della difesa, quali Autorità nazionali di \ngestione delle crisi informatiche, e i relativi ambiti di competenza come indicati \n\n \n \n \n \nall’articolo 2, comma 1, lettera g). Successivamente, ogni ulteriore modifica a tali \ndesignazioni o compiti è notificata, senza ingiustificato ritardo, alla Commissione \neuropea. Alle designazioni sono assicurate idonee forme di pubblicità.",
+        "Tipo Match": "il match é un comma: nel riferimento viene indicato articolo e comma",
+        "Match Con": {
+            "Riferimenti": [
+                {
+                    "n_articolo": "2",
+                    "n_paragrafo": "1",
+                    "nome_documento": "raccomandazione 2003/361/CE",
+                    "codice_documento": "2003/361"
+                }
+            ],
+            "Requirements": "La direttiva si applica a soggetti pubblici o privati considerati medie imprese secondo specifici criteri, che operano nell'Unione.",
+            "Core Text": "La presente direttiva si applica ai soggetti pubblici o privati delle tipologie di cui all'allegato I o II che sono considerati medie imprese ai sensi all'articolo 2, paragrafo 1, dell'allegato alla raccomandazione 2003/361/CE, o che superano i massimali per le medie imprese di cui al paragrafo 1 di tale articolo, e che prestano i loro servizi o svolgono le loro attività all'interno dell'Unione. L'articolo 3, paragrafo 4, dell'allegato a tale raccomandazione non si applica ai fini della presente direttiva.",
+            "Pattern Type": "condizione",
+            "Titolo Articolo": "Ambito di applicazione",
+            "Contenuto": "La presente direttiva si applica ai soggetti pubblici o privati delle tipologie di cui all'allegato I o II che sono considerati \nmedie imprese ai sensi all'articolo 2, paragrafo 1, dell'allegato alla raccomandazione 2003/361/CE, o che superano i \nmassimali per le medie imprese di cui al paragrafo 1 di tale articolo, e che prestano i loro servizi o svolgono le loro attività \nall'interno dell'Unione.\nL'articolo 3, paragrafo 4, dell'allegato a tale raccomandazione non si applica ai fini della presente direttiva.",
+            "Identificativo Comma": "1",
+            "Nome documento": "7.Direttiva_2022-2555_NIS2.pdf",
+            "Identificativo Articolo": "Articolo 2",
+            "Nome": "Articolo Articolo 2 Comma 1"
+        }
+    },
+    {
+        "Nome Documento": "8.Schema_di_Decreto_Lgs_NIS_2.pdf",
+        "Titolo Articolo": "(Comunicazioni all’Unione europea) ",
+        "Pagina": 36,
+        "Identificativo Articolo": "ART.  22 ",
+        "Identificativo Comma": "2",
+        "Nome": "Articolo ART.  22  comma 2",
+        "Contenuto": "L’Autorità nazionale competente NIS: \na) trasmette alla Commissione europea la Strategia nazionale di cybersicurezza di cui \nall’articolo 9 entro tre mesi dalla sua adozione o dal suo aggiornamento. Possono \nessere esclusi dalla trasmissione gli elementi della strategia riguardanti la sicurezza \nnazionale e quelli ulteriori rispetto alle previsioni del presente decreto; \nb) comunica entro il 17 gennaio 2025 alla Commissione europea le misure sanzionatorie \ne le disposizioni che stabiliscono sanzioni nei confronti dei soggetti essenziali e dei \nsoggetti importanti di cui al presente decreto. Successivamente, è comunicata ogni \nulteriore modifica a tali misure e disposizioni; \nc) comunica entro il 17 aprile 2025 e, successivamente, ogni due anni: \n1) alla Commissione europea e al Gruppo di cooperazione NIS, il numero dei soggetti \nessenziali e dei soggetti importanti nell’elenco di cui all’articolo 7, comma 2, per \nciascun settore e sottosettore di cui agli allegati I, II e III; \n2) alla Commissione europea informazioni pertinenti sul numero di soggetti essenziali \ne di soggetti importanti individuati ai sensi dell’articolo 3, comma 9, lettere da b) a \ne), sui settori e i sottosettori di cui agli allegati I, II e III ai quali appartengono, sul \ntipo di servizio che forniscono e sui criteri di cui all’articolo 3, comma 9, lettere da \nb) a e), per i quali sono stati individuati; \nd) su richiesta della Commissione europea, può notificare a quest’ultima, in tutto o in \nparte, le denominazioni dei soggetti essenziali e dei soggetti importanti di cui alla \nlettera c), numero 2); \ne) comunica all’ENISA, senza ingiustificato ritardo e comunque entro quattordici giorni \ndalla loro ricezione, le informazioni di cui all’articolo 7, comma 1, lettere a), b) e d), \ncomma 4, lettera b), e comma 5, lettere a) e b), fornite dai soggetti di cui a quest’ultimo \ncomma, per l’inserimento nel registro di cui all’articolo 27 della direttiva (UE) \n2022/2555. L’Autorità nazionale competente NIS può richiedere ad ENISA l’accesso \na tale registro, assicurando la tutela della riservatezza delle informazioni ivi contenute.",
+        "Tipo Match": "il match é un comma: nel riferimento viene indicato articolo e comma",
+        "Match Con": {
+            "Riferimenti": [],
+            "Requirements": "Gli Stati membri devono adottare misure strategiche per la cibersicurezza, inclusi requisiti per prodotti e servizi TIC, gestione delle vulnerabilità e promozione della cibersicurezza.",
+            "Core Text": "Nell'ambito della strategia nazionale per la cibersicurezza, gli Stati membri adottano in particolare misure strategiche riguardanti: a) la cibersicurezza nella catena di approvvigionamento dei prodotti e dei servizi TIC utilizzati da soggetti per la fornitura dei loro servizi; b) l'inclusione e la definizione di requisiti concernenti la cibersicurezza per i prodotti e i servizi TIC negli appalti pubblici, compresi i requisiti relativi alla certificazione della cibersicurezza, alla cifratura e l'utilizzo di prodotti di cibersicurezza open source; c) la gestione delle vulnerabilità, ivi comprese la promozione e l'agevolazione della divulgazione coordinata delle vulnerabilità ai sensi dell'articolo 12, paragrafo 1; d) il sostegno della disponibilità generale, dell'integrità e della riservatezza del carattere fondamentale pubblico di una rete internet aperta, compresa, se del caso, la cibersicurezza dei cavi di comunicazione sottomarini; e) la promozione dello sviluppo e dell'integrazione di tecnologie avanzate pertinenti miranti ad attuare misure di avanguardia nella gestione dei rischi di cibersicurezza; f) la promozione e lo sviluppo di attività di istruzione, formazione e sensibilizzazione, di competenze e di iniziative di ricerca e sviluppo in materia di cibersicurezza, nonché orientamenti sulle buone pratiche e sui controlli concernenti l'igiene informatica, destinati ai cittadini, ai portatori di interessi e ai soggetti; g) il sostegno agli istituti accademici e di ricerca volto a sviluppare, rafforzare e promuovere la diffusione di strumenti di cibersicurezza e di infrastrutture di rete sicure; h) la messa a punto di procedure pertinenti e strumenti adeguati di condivisione delle informazioni per sostenere la condivisione volontaria di informazioni sulla cibersicurezza tra soggetti, nel rispetto del diritto dell'Unione; i) il rafforzamento dei valori di riferimento relativi alla ciberresilienza e all'igiene informatica delle PMI, in particolare quelle escluse dall'ambito di applicazione della presente direttiva, fornendo orientamenti e sostegno facilmente accessibili per le loro esigenze specifiche; j) la promozione di una protezione informatica attiva.",
+            "Pattern Type": "obbligo",
+            "Titolo Articolo": "Strategia nazionale per la cibersicurezza",
+            "Contenuto": "Nell'ambito della strategia nazionale per la cibersicurezza, gli Stati membri adottano in particolare misure strategiche \nriguardanti:\na) la cibersicurezza nella catena di approvvigionamento dei prodotti e dei servizi TIC utilizzati da soggetti per la fornitura \ndei loro servizi;\nb) l'inclusione e la definizione di requisiti concernenti la cibersicurezza per i prodotti e i servizi TIC negli appalti pubblici, \ncompresi i requisiti relativi alla certificazione della cibersicurezza, alla cifratura e l'utilizzo di prodotti di cibersicurezza \nopen source;\nc) la gestione delle vulnerabilità, ivi comprese la promozione e l'agevolazione della divulgazione coordinata delle \nvulnerabilità ai sensi dell'articolo 12, paragrafo 1;\nd) il sostegno della disponibilità generale, dell'integrità e della riservatezza del carattere fondamentale pubblico di una rete \ninternet aperta, compresa, se del caso, la cibersicurezza dei cavi di comunicazione sottomarini;\ne) la promozione dello sviluppo e dell'integrazione di tecnologie avanzate pertinenti miranti ad attuare misure di \navanguardia nella gestione dei rischi di cibersicurezza;\nf)\nla promozione e lo sviluppo di attività di istruzione, formazione e sensibilizzazione, di competenze e di iniziative di \nricerca e sviluppo in materia di cibersicurezza, nonché orientamenti sulle buone pratiche e sui controlli concernenti \nl'igiene informatica, destinati ai cittadini, ai portatori di interessi e ai soggetti;\nIT\nL 333/115  \n\ng) il sostegno agli istituti accademici e di ricerca volto a sviluppare, rafforzare e promuovere la diffusione di strumenti di \ncibersicurezza e di infrastrutture di rete sicure;\nh) la messa a punto di procedure pertinenti e strumenti adeguati di condivisione delle informazioni per sostenere la \ncondivisione volontaria di informazioni sulla cibersicurezza tra soggetti, nel rispetto del diritto dell'Unione;\ni)\nil rafforzamento dei valori di riferimento relativi alla ciberresilienza e all'igiene informatica delle PMI, in particolare \nquelle escluse dall'ambito di applicazione della presente direttiva, fornendo orientamenti e sostegno facilmente \naccessibili per le loro esigenze specifiche;\nj)\nla promozione di una protezione informatica attiva.",
+            "Identificativo Comma": "2",
+            "Nome documento": "7.Direttiva_2022-2555_NIS2.pdf",
+            "Identificativo Articolo": "Articolo 7",
+            "Nome": "Articolo Articolo 7 Comma 2"
+        }
+    },
+    {
+        "Nome Documento": "8.Schema_di_Decreto_Lgs_NIS_2.pdf",
+        "Titolo Articolo": "(Disposizioni finanziarie) ",
+        "Pagina": 61,
+        "Identificativo Articolo": "ART. 44 ",
+        "Identificativo Comma": "3",
+        "Nome": "Articolo ART. 44  comma 3",
+        "Contenuto": "Dall'attuazione del presente decreto, ad esclusione dell’articolo 11 per l’anno 2024 e  degli \narticoli 10, 11, 13, comma 1, e 15 a decorrere dall’anno 2025, non devono derivare nuovi \no maggiori oneri a carico della finanza pubblica e le amministrazioni pubbliche \nprovvedono con le risorse umane, strumentali e finanziarie previste a legislazione vigente. \n \nIl presente decreto, munito del sigillo dello Stato, sarà inserito nella Raccolta ufficiale degli \natti normativi della Repubblica italiana. È fatto obbligo a chiunque spetti di osservarlo e di \nfarlo osservare. \n \nDato a …. \n \n\n \n \n \nSCHEMA DI DECRETO LEGISLATIVO DI RECEPIMENTO DELLA NIS2 \nAttuazione della direttiva (UE) 2022/2555, relativa a misure per un livello comune elevato di sicurezza informatica nell'Unione, recante \nmodifica del regolamento (UE) n. 910/2014 e della direttiva (UE) 2018/1972 e che abroga la direttiva (UE) 2016/1148 \nALLEGATO I \nSettori ad altra criticità \nSettore \nSottosettore \nTipologia di soggetto \n1.  Energia \na)  Energia elettrica \n— Impresa elettrica quale definita all'articolo 2, punto 57), della direttiva (UE) 2019/944 del Parlamento \neuropeo e del Consiglio che esercita attività di «fornitura» quale definita all'articolo 2, punto 12), di tale \ndirettiva \n— Gestori del sistema di distribuzione quali definiti all'articolo 2, punto 29), della direttiva (UE) \n2019/944 \n— Gestori del sistema di trasmissione quali definiti all'articolo 2, punto 35), della direttiva (UE) \n2019/944 \n— Produttori quali definiti all'articolo 2, punto 38), della direttiva (UE) 2019/944 \n— Gestori del mercato elettrico designato quali definiti all'articolo 2, punto 8), del regolamento (UE) \n2019/943 del Parlamento europeo e del Consiglio \n— Partecipanti al mercato dell'energia elettrica quali definiti all'articolo 2, punto 25), del regolamento \n(UE) 2019/943 che forniscono servizi di aggregazione, gestione della domanda o stoccaggio di energia \nquali definiti all'articolo 2, punti 18), 20) e 59) della direttiva (UE) 2019/944 \n— Gestori di un punto di ricarica responsabili della gestione e del funzionamento di un punto di ricarica \nche fornisce un servizio di ricarica a utenti finali, anche in nome e per conto di un fornitore di servizi di \nmobilità \nb)  Teleriscaldamento \ne teleraffrescamento \n— Gestori di teleriscaldamento o teleraffrescamento quali definiti all'articolo 2, punto 19), della \ndirettiva (UE) 2018/2001 del Parlamento europeo e del Consiglio \nc)  Petrolio \n— Gestori di oleodotti \n— Gestori di impianti di produzione, raffinazione, trattamento, deposito e trasporto di petrolio \n— Organismi centrali di stoccaggio quali definiti all'articolo 2, lettera f), della direttiva 2009/119/CE \ndel Consiglio \nd)  Gas \n— Imprese fornitrici quali definite all'articolo 2, punto 8), della direttiva 2009/73/CE del Parlamento \neuropeo e del Consiglio \n— Gestori del sistema di distribuzione quali definiti all'articolo 2, punto 6), della direttiva 2009/73/CE \n\n \n \n \n— Gestori del sistema di trasporto quali definiti all'articolo 2, punto 4), della direttiva 2009/73/CE \n— Gestori dell'impianto di stoccaggio quali definiti all'articolo 2, punto 10), della direttiva 2009/73/CE \n— Gestori del sistema GNL quali definiti all'articolo 2, punto 12), della direttiva 2009/73/CE \n— Imprese di gas naturale quali definite all'articolo 2, punto 1), della direttiva 2009/73/CE; \n— Gestori di impianti di raffinazione e trattamento di gas naturale \ne)  Idrogeno \n— Gestori di impianti di produzione, stoccaggio e trasporto di idrogeno \n2.  Trasporti a)  Trasporto aereo \n— Vettori aerei quali definiti all'articolo 3, punto 4), del regolamento (CE) n. 300/2008 utilizzati a fini \ncommerciali \n— Gestori aeroportuali quali definiti all'articolo 2, punto 2), della direttiva 2009/12/CE del Parlamento \neuropeo e del Consiglio, aeroporti quali definiti all'articolo 2, punto 1), di tale direttiva, compresi gli \naeroporti centrali di cui all'allegato II, sezione 2, del regolamento (UE) n. 1315/2013 del Parlamento \neuropeo e del Consiglio, e soggetti che gestiscono impianti annessi situati in aeroporti \n— Operatori attivi nel controllo della gestione del traffico che forniscono un servizio di controllo del \ntraffico aereo quali definiti all'articolo 2, punto 1), del regolamento (CE) n. 549/2004 del Parlamento \neuropeo e del Consiglio \nb)  Trasporto \nferroviario \n— Gestori dell'infrastruttura quali definiti all'articolo 3, punto 2), della direttiva 2012/34/UE del \nParlamento europeo e del Consiglio \n— Imprese ferroviarie quali definiti all'articolo 3, punto 1), della direttiva 2012/34/UE, compresi gli \noperatori degli impianti di servizio quali definiti all'articolo 3, punto 12), di tale direttiva \nc)  Trasporto per vie \nd'acqua \n— Compagnie di navigazione per il trasporto per vie d'acqua interne, marittimo e costiero di passeggeri \ne merci quali definite per il trasporto marittimo all'allegato I del regolamento (CE) n. 725/2004 del \nParlamento europeo e del Consiglio, escluse le singole navi gestite da tale compagnia \n— Organi di gestione dei porti quali definiti all'articolo 3, punto 1), della direttiva 2005/65/CE del \nParlamento europeo e del Consiglio, compresi i relativi impianti portuali quali definiti all'articolo 2, \npunto 11), del regolamento (CE) n. 725/2004, e soggetti che gestiscono opere e attrezzature all'interno \ndi porti \n— Gestori di servizi di assistenza al traffico marittimo (VTS) quali definiti all'articolo 3, lettera o), della \ndirettiva 2002/59/CE del Parlamento europeo e del Consiglio \nd)  Trasporto su \nstrada \n— Autorità stradali quali definite all'articolo 2, punto 12), del regolamento delegato (UE) 2015/962 \ndella Commissione responsabili del controllo della gestione del traffico, esclusi i soggetti pubblici per i \n\n \n \n \nquali la gestione del traffico o la gestione di sistemi di trasporto intelligenti costituiscono soltanto una \nparte non essenziale della loro attività generale \n— Gestori di sistemi di trasporto intelligenti quali definiti all'articolo 4, punto 1), della direttiva \n2010/40/UE del Parlamento europeo e del Consiglio \n3.  Settore bancario \nEnti creditizi quali definiti all'articolo 4, punto 1), del regolamento (UE) n. 575/2013 del Parlamento \neuropeo e del Consiglio",
+        "Tipo Match": "il match é un comma: nel riferimento viene indicato articolo e comma",
+        "Match Con": {
+            "Riferimenti": [
+                {
+                    "nome_documento": "Regolamento sui CSIRT",
+                    "codice_documento": "csirt"
+                }
+            ],
+            "Requirements": "I CSIRT devono soddisfare specifici requisiti tecnici e operativi per garantire la loro funzionalità e disponibilità.",
+            "Core Text": "I CSIRT soddisfano i requisiti seguenti: a) i CSIRT garantiscono un alto livello di disponibilità dei propri canali di comunicazione evitando singoli punti di vulnerabilità (single points of failure) e dispongono di vari mezzi che permettono loro di essere contattati e di contattare altri in qualsiasi momento; essi indicano chiaramente i canali di comunicazione e li rendono noti alla loro base di utenti e ai partner con cui collaborano; b) i locali e i sistemi informatici di supporto dei CSIRT sono ubicati in siti sicuri; c) i CSIRT sono dotati di un sistema adeguato di gestione e inoltro delle richieste, in particolare per facilitare i trasferimenti in maniera efficace ed efficiente; d) i CSIRT garantiscono la riservatezza e l'affidabilità delle loro operazioni; e) i CSIRT dispongono di personale sufficiente per garantire la disponibilità dei loro servizi in qualsiasi momento e garantiscono che il loro personale sia formato in modo appropriato; f) i CSIRT sono dotati di sistemi ridondanti e spazi di lavoro di backup al fine di garantire la continuità dei loro servizi. I CSIRT hanno la possibilità di partecipare a reti di cooperazione internazionale.",
+            "Pattern Type": "obbligo",
+            "Titolo Articolo": "Requisiti, capacità tecniche e compiti dei CSIRT",
+            "Contenuto": "I CSIRT soddisfano i requisiti seguenti:\na) i CSIRT garantiscono un alto livello di disponibilità dei propri canali di comunicazione evitando singoli punti di \nvulnerabilità (single points of failure) e dispongono di vari mezzi che permettono loro di essere contattati e di contattare \naltri in qualsiasi momento; essi indicano chiaramente i canali di comunicazione e li rendono noti alla loro base di utenti \ne ai partner con cui collaborano;\nb) i locali e i sistemi informatici di supporto dei CSIRT sono ubicati in siti sicuri;\nc) i CSIRT sono dotati di un sistema adeguato di gestione e inoltro delle richieste, in particolare per facilitare i trasferimenti \nin maniera efficace ed efficiente;\nd) i CSIRT garantiscono la riservatezza e l'affidabilità delle loro operazioni;\ne) i CSIRT dispongono di personale sufficiente per garantire la disponibilità dei loro servizi in qualsiasi momento e \ngarantiscono che il loro personale sia formato in modo appropriato;\nf)\ni CSIRT sono dotati di sistemi ridondanti e spazi di lavoro di backup al fine di garantire la continuità dei loro servizi.\nI CSIRT hanno la possibilità di partecipare a reti di cooperazione internazionale.",
+            "Identificativo Comma": "1",
+            "Nome documento": "7.Direttiva_2022-2555_NIS2.pdf",
+            "Identificativo Articolo": "Articolo 11",
+            "Nome": "Articolo Articolo 11 Comma 1"
+        }
+    }
+]

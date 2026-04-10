@@ -1,0 +1,35 @@
+# Stage 1: Build the application
+FROM python:3.11-slim AS builder
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# Set the working directory inside the container
+WORKDIR /app
+
+# Install system dependencies and Python packages
+COPY requirements.txt .
+RUN pip install --no-cache-dir --target=/app/deps -r requirements.txt
+
+# Stage 2: Create the final image
+FROM python:3.11-slim
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# Set the working directory
+WORKDIR /app
+
+# Copy installed packages from the builder stage
+COPY --from=builder /app/deps /usr/local/lib/python3.11/site-packages
+
+# Copy the application code 
+COPY ./src/be/ ./src/be/
+
+# Expose the port your app runs on (if applicable)
+EXPOSE 6002
+
+# Command to run the application
+CMD ["python", "src/be/main.py"]

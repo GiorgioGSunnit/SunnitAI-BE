@@ -1,0 +1,428 @@
+{					
+  "status": "success",					
+  "data": {					
+    "scopes": [					
+      {					
+        "name": "Approfondimenti, studi e altre notizie delle autorità",					
+        "total": 3147,					
+        "files": [					
+          {					
+            "name": "Euro area bank interest rate statistics: August 2024",					
+            "Distance": 0.658785,					
+			"topics": [		
+				{	
+					"name": "Euro area bank interest rate statistics: August 2024",
+					"Distance": 0.658785
+				},	
+				{	
+					"name": "Intermediari 106",
+					"Distance": 0.633485
+				},	
+				{	
+					"name": "cost-of-borrowing indicator",
+					"Distance": 0.567782
+				}	
+			]		
+		  },		
+          {					
+            "name": "EBA Work Programme 2025",					
+            "Distance": 0.687846,					
+			"topics": [		
+				{	
+					"name": "Euro area bank interest rate statistics: August 2024",
+					"Distance": 0.658785
+				},	
+				{	
+					"name": "Intermediari 106",
+					"Distance": 0.633485
+				},	
+				{	
+					"name": "cost-of-borrowing indicator",
+					"Distance": 0.567782
+				}	
+			]		
+          },					
+          {					
+            "name": "Dossier n. 333/1, n. 333/2, n. 333/3 - Misure urgenti di carattere fiscale, proroghe di termini normativi ed interventi di carattere economico",					
+            "Distance": 0.687846,					
+			"topics": [		
+				{	
+					"name": "Euro area bank interest rate statistics: August 2024",
+					"Distance": 0.658785
+				},	
+				{	
+					"name": "Intermediari 106",
+					"Distance": 0.633485
+				},	
+				{	
+					"name": "cost-of-borrowing indicator",
+					"Distance": 0.567782
+				}	
+			]		
+          }					
+        ]					
+      },					
+      {					
+        "name": "Associazioni di settore",					
+        "total": 137,					
+        "files": [					
+          {					
+            "name": "Euro area bank interest rate statistics: August 2024",					
+            "Distance": 0.658785,					
+			"topics": [		
+				{	
+					"name": "Euro area bank interest rate statistics: August 2024",
+					"Distance": 0.658785
+				},	
+				{	
+					"name": "Intermediari 106",
+					"Distance": 0.633485
+				},	
+				{	
+					"name": "cost-of-borrowing indicator",
+					"Distance": 0.567782
+				}	
+			]		
+		  },	
+          {					
+            "name": "EBA Work Programme 2025",					
+            "Distance": 0.687846,					
+			"topics": [		
+				{	
+					"name": "Euro area bank interest rate statistics: August 2024",
+					"Distance": 0.658785
+				},	
+				{	
+					"name": "Intermediari 106",
+					"Distance": 0.633485
+				},	
+				{	
+					"name": "cost-of-borrowing indicator",
+					"Distance": 0.567782
+				}	
+			]		
+          },					
+          {					
+            "name": "Dossier n. 333/1, n. 333/2, n. 333/3 - Misure urgenti di carattere fiscale, proroghe di termini normativi ed interventi di carattere economico",					
+            "Distance": 0.687846,					
+			"topics": [		
+				{	
+					"name": "Euro area bank interest rate statistics: August 2024",
+					"Distance": 0.658785
+				},	
+				{	
+					"name": "Intermediari 106",
+					"Distance": 0.633485
+				},	
+				{	
+					"name": "cost-of-borrowing indicator",
+					"Distance": 0.567782
+				}	
+			]		
+          }					
+        ]					
+      },					
+      {					
+        "name": "Consultazioni e documenti pre-normativi",					
+        "total": 832,					
+        "files": [					
+          {					
+            "name": "Euro area bank interest rate statistics: August 2024",					
+            "Distance": 0.658785,					
+			"topics": [		
+				{	
+					"name": "Euro area bank interest rate statistics: August 2024",
+					"Distance": 0.658785
+				},	
+				{	
+					"name": "Intermediari 106",
+					"Distance": 0.633485
+				},	
+				{	
+					"name": "cost-of-borrowing indicator",
+					"Distance": 0.567782
+				}	
+			]		
+		  },
+          {					
+            "name": "EBA Work Programme 2025",					
+            "Distance": 0.687846,					
+			"topics": [		
+				{	
+					"name": "Euro area bank interest rate statistics: August 2024",
+					"Distance": 0.658785
+				},	
+				{	
+					"name": "Intermediari 106",
+					"Distance": 0.633485
+				},	
+				{	
+					"name": "cost-of-borrowing indicator",
+					"Distance": 0.567782
+				}	
+			]		
+          },					
+          {					
+            "name": "Dossier n. 333/1, n. 333/2, n. 333/3 - Misure urgenti di carattere fiscale, proroghe di termini normativi ed interventi di carattere economico",					
+            "Distance": 0.687846,					
+			"topics": [		
+				{	
+					"name": "Euro area bank interest rate statistics: August 2024",
+					"Distance": 0.658785
+				},	
+				{	
+					"name": "Intermediari 106",
+					"Distance": 0.633485
+				},	
+				{	
+					"name": "cost-of-borrowing indicator",
+					"Distance": 0.567782
+				}	
+			]		
+          }					
+        ]					
+      },					
+      {					
+        "name": "Misure restrittive",					
+        "total": 747,					
+        "files": [					
+          {					
+            "name": "Euro area bank interest rate statistics: August 2024",					
+            "Distance": 0.658785,					
+			"topics": [		
+				{	
+					"name": "Euro area bank interest rate statistics: August 2024",
+					"Distance": 0.658785
+				},	
+				{	
+					"name": "Intermediari 106",
+					"Distance": 0.633485
+				},	
+				{	
+					"name": "cost-of-borrowing indicator",
+					"Distance": 0.567782
+				}	
+			]		
+		  },
+          {					
+            "name": "EBA Work Programme 2025",					
+            "Distance": 0.687846,					
+			"topics": [		
+				{	
+					"name": "Euro area bank interest rate statistics: August 2024",
+					"Distance": 0.658785
+				},	
+				{	
+					"name": "Intermediari 106",
+					"Distance": 0.633485
+				},	
+				{	
+					"name": "cost-of-borrowing indicator",
+					"Distance": 0.567782
+				}	
+			]		
+          },					
+          {					
+            "name": "Dossier n. 333/1, n. 333/2, n. 333/3 - Misure urgenti di carattere fiscale, proroghe di termini normativi ed interventi di carattere economico",					
+            "Distance": 0.687846,					
+			"topics": [		
+				{	
+					"name": "Euro area bank interest rate statistics: August 2024",
+					"Distance": 0.658785
+				},	
+				{	
+					"name": "Intermediari 106",
+					"Distance": 0.633485
+				},	
+				{	
+					"name": "cost-of-borrowing indicator",
+					"Distance": 0.567782
+				}	
+			]		
+          }					
+        ]					
+      },					
+      {					
+        "name": "Normativa e disposizioni interpretative",					
+        "total": 3479,					
+        "files": [					
+          {					
+            "name": "Euro area bank interest rate statistics: August 2024",					
+            "Distance": 0.658785,					
+			"topics": [		
+				{	
+					"name": "Euro area bank interest rate statistics: August 2024",
+					"Distance": 0.658785
+				},	
+				{	
+					"name": "Intermediari 106",
+					"Distance": 0.633485
+				},	
+				{	
+					"name": "cost-of-borrowing indicator",
+					"Distance": 0.567782
+				}	
+			]		
+		  },			
+          {					
+            "name": "EBA Work Programme 2025",					
+            "Distance": 0.687846,					
+			"topics": [		
+				{	
+					"name": "Euro area bank interest rate statistics: August 2024",
+					"Distance": 0.658785
+				},	
+				{	
+					"name": "Intermediari 106",
+					"Distance": 0.633485
+				},	
+				{	
+					"name": "cost-of-borrowing indicator",
+					"Distance": 0.567782
+				}	
+			]		
+          },					
+          {					
+            "name": "Dossier n. 333/1, n. 333/2, n. 333/3 - Misure urgenti di carattere fiscale, proroghe di termini normativi ed interventi di carattere economico",					
+            "Distance": 0.687846,					
+			"topics": [		
+				{	
+					"name": "Euro area bank interest rate statistics: August 2024",
+					"Distance": 0.658785
+				},	
+				{	
+					"name": "Intermediari 106",
+					"Distance": 0.633485
+				},	
+				{	
+					"name": "cost-of-borrowing indicator",
+					"Distance": 0.567782
+				}	
+			]		
+          }					
+        ]					
+      },					
+      {					
+        "name": "Organismi internazionali",					
+        "total": 212,					
+        "files": [					
+          {					
+            "name": "Euro area bank interest rate statistics: August 2024",					
+            "Distance": 0.658785,					
+			"topics": [		
+				{	
+					"name": "Euro area bank interest rate statistics: August 2024",
+					"Distance": 0.658785
+				},	
+				{	
+					"name": "Intermediari 106",
+					"Distance": 0.633485
+				},	
+				{	
+					"name": "cost-of-borrowing indicator",
+					"Distance": 0.567782
+				}	
+			]		
+		  },			
+          {					
+            "name": "EBA Work Programme 2025",					
+            "Distance": 0.687846,					
+			"topics": [		
+				{	
+					"name": "Euro area bank interest rate statistics: August 2024",
+					"Distance": 0.658785
+				},	
+				{	
+					"name": "Intermediari 106",
+					"Distance": 0.633485
+				},	
+				{	
+					"name": "cost-of-borrowing indicator",
+					"Distance": 0.567782
+				}	
+			]		
+          },					
+          {					
+            "name": "Dossier n. 333/1, n. 333/2, n. 333/3 - Misure urgenti di carattere fiscale, proroghe di termini normativi ed interventi di carattere economico",					
+            "Distance": 0.687846,					
+			"topics": [		
+				{	
+					"name": "Euro area bank interest rate statistics: August 2024",
+					"Distance": 0.658785
+				},	
+				{	
+					"name": "Intermediari 106",
+					"Distance": 0.633485
+				},	
+				{	
+					"name": "cost-of-borrowing indicator",
+					"Distance": 0.567782
+				}	
+			]		
+          }					
+        ]					
+      },					
+      {					
+        "name": "Sanzioni, Giurisprudenza e altri provvedimenti",					
+        "total": 959,					
+        "files": [					
+          {					
+            "name": "Euro area bank interest rate statistics: August 2024",					
+            "Distance": 0.658785,					
+			"topics": [		
+				{	
+					"name": "Euro area bank interest rate statistics: August 2024",
+					"Distance": 0.658785
+				},	
+				{	
+					"name": "Intermediari 106",
+					"Distance": 0.633485
+				},	
+				{	
+					"name": "cost-of-borrowing indicator",
+					"Distance": 0.567782
+				}	
+			]		
+		  },			
+          {					
+            "name": "EBA Work Programme 2025",					
+            "Distance": 0.687846,					
+			"topics": [		
+				{	
+					"name": "Euro area bank interest rate statistics: August 2024",
+					"Distance": 0.658785
+				},	
+				{	
+					"name": "Intermediari 106",
+					"Distance": 0.633485
+				},	
+				{	
+					"name": "cost-of-borrowing indicator",
+					"Distance": 0.567782
+				}	
+			]		
+          },					
+          {					
+            "name": "Dossier n. 333/1, n. 333/2, n. 333/3 - Misure urgenti di carattere fiscale, proroghe di termini normativi ed interventi di carattere economico",					
+            "Distance": 0.687846,					
+			"topics": [		
+				{	
+					"name": "Euro area bank interest rate statistics: August 2024",
+					"Distance": 0.658785
+				},	
+				{	
+					"name": "Intermediari 106",
+					"Distance": 0.633485
+				},	
+				{	
+					"name": "cost-of-borrowing indicator",
+					"Distance": 0.567782
+				}	
+			]		
+          }					
+        ]					
+      }			
+    ]					
+  },					
+  "message": "Data retrieved successfully"					
+}					

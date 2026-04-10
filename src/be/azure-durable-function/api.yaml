@@ -1,0 +1,421 @@
+openapi: 3.0.0
+info:
+  title: Azure Durable Functions API
+  description: API for document processing, comparison, and analysis services
+  version: 1.0.0
+
+paths:
+  /api/login:
+    post:
+      summary: User authentication
+      description: Authenticates users with username and password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - username
+                - password
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  status:
+                    type: string
+        '401':
+          description: Invalid credentials
+          
+  /api/job/{job_id}:
+    get:
+      summary: Get job status (polling)
+      description: Returns job status, output when completed. Compatible with Azure Durable format.
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Job status (runtimeStatus, output when completed)
+        '404':
+          description: Job not found
+
+  /api/upload:
+    post:
+      summary: Upload a document
+      description: Uploads a document to blob storage
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+                - external
+              properties:
+                file:
+                  type: string
+                  format: binary
+                external:
+                  type: string
+                  enum: ["1", "true", "True", "0", "false", "False"]
+      responses:
+        '200':
+          description: File uploaded successfully
+        '400':
+          description: Missing parameters or file
+          
+  /api/extract_requirements:
+    post:
+      summary: Extract requirements from document
+      description: Extracts requirements from a PDF document
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+                - external
+              properties:
+                file:
+                  type: string
+                  format: binary
+                external:
+                  type: string
+                  enum: ["1", "true", "True", "0", "false", "False"]
+      responses:
+        '200':
+          description: Extraction process started
+        '400':
+          description: Missing parameters or file
+          
+  /api/compare_requirements:
+    post:
+      summary: Compare requirements between documents
+      description: Compares requirements between two PDF documents
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file1
+                - file2
+                - file1IsExternal
+                - file2IsExternal
+              properties:
+                file1:
+                  type: string
+                  format: binary
+                file2:
+                  type: string
+                  format: binary
+                file1IsExternal:
+                  type: string
+                  enum: ["1", "true", "True", "0", "false", "False"]
+                file2IsExternal:
+                  type: string
+                  enum: ["1", "true", "True", "0", "false", "False"]
+                amending_mode:
+                  type: string
+          application/json:
+            schema:
+              type: object
+              required:
+                - file1Name
+                - file2Name
+              properties:
+                file1Name:
+                  type: string
+                file2Name:
+                  type: string
+                file1IsExternal:
+                  type: boolean
+                  default: true
+                file2IsExternal:
+                  type: boolean
+                  default: true
+                amending_mode:
+                  type: string
+      responses:
+        '200':
+          description: Comparison process started
+        '400':
+          description: Missing parameters
+        '404':
+          description: One or both files not found
+          
+  /api/get-document-list:
+    get:
+      summary: Get list of available documents
+      description: Returns a list of PDF files in blob storage that have matching JSON files
+      responses:
+        '200':
+          description: List of documents
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  files:
+                    type: array
+                    items:
+                      type: string
+        '500':
+          description: Server error
+          
+  /api/getDocuments/{name}:
+    get:
+      summary: Get document details
+      description: Returns details about a specific document
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Document details or error details
+          
+  /api/getCompare/{name}/{compareToName}:
+    get:
+      summary: Get comparison results
+      description: Returns the results of a comparison between two documents
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: compareToName
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Comparison results or error details
+          
+  /api/sendCompare:
+    post:
+      summary: Initiate document comparison
+      description: Initiates comparison between two documents
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - compareToName
+              properties:
+                name:
+                  type: string
+                compareToName:
+                  type: string
+      responses:
+        '200':
+          description: Comparison initiated
+        '400':
+          description: Missing parameters
+          
+  /api/extract_subjects:
+    post:
+      summary: Extract subjects from document
+      description: Extracts subjects using NER from a document
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Subjects extracted
+        '400':
+          description: Missing file or empty content
+          
+  /api/extract_sanctions:
+    post:
+      summary: Extract sanctions from document
+      description: Extracts sanctions from a document
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+                - external
+              properties:
+                file:
+                  type: string
+                  format: binary
+                external:
+                  type: string
+                  enum: ["1", "true", "True", "0", "false", "False"]
+      responses:
+        '200':
+          description: Sanctions extraction started
+        '400':
+          description: Missing parameters or file
+          
+  /api/search:
+    post:
+      summary: Search documents
+      description: Performs a search across documents
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Search results
+        '400':
+          description: Invalid or missing JSON body
+          
+  /api/download-excel:
+    get:
+      summary: Download analysis as Excel
+      description: Downloads a comprehensive analysis in Excel format
+      responses:
+        '200':
+          description: Excel file
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+                
+  /api/download-requirements-result:
+    get:
+      summary: Download requirements analysis
+      description: Downloads the requirements analysis in Excel format
+      responses:
+        '200':
+          description: Excel file
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+
+  /api/download-requirements-excel:
+    get:
+      summary: Download requirements Excel by document name
+      description: Downloads the requirements Excel for a specific document (query param filename)
+      parameters:
+        - name: filename
+          in: query
+          required: true
+          schema:
+            type: string
+          description: PDF filename or base name (e.g. document.pdf or document)
+      responses:
+        '200':
+          description: Excel file
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: Excel file not found for document
+                
+  /api/download-comparison-result:
+    get:
+      summary: Download comparison results
+      description: Downloads the comparison results as HTML
+      responses:
+        '200':
+          description: HTML file
+          content:
+            text/html:
+              schema:
+                type: string
+                
+  /api/translate:
+    post:
+      summary: Translate document
+      description: Translates the content of a document
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Translation results
+        '400':
+          description: Missing file
+          
+  /api/get-results:
+    get:
+      summary: Get operation results
+      description: Retrieves results for various operations
+      parameters:
+        - name: type
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [requirement, subject, sanction, comparison]
+        - name: name
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: fileName1
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: fileName2
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: amending_mode
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Operation results or error details

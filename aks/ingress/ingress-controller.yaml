@@ -1,0 +1,54 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ${APP_NAME}-ingress
+  namespace: ${NAMESPACE}
+  annotations:
+    kubernetes.azure.com/tls-cert-keyvault-uri: "${AKS_KEY_VAULT_URL}/certificates/${TLS_OBJ_NAME}"
+    kubernetes.azure.com/ssl-cert-keyvault-uri: "${AKS_KEY_VAULT_URL}/certificates/${TLS_OBJ_NAME}"
+spec:
+  ingressClassName: webapprouting.kubernetes.azure.com
+  tls:
+  - hosts:
+      - ${APP_HOSTNAME}
+      - ${FE_HOSTNAME}
+    secretName: keyvault-${APP_NAME}-ingress
+  rules:
+  - host: ${APP_HOSTNAME}
+    http:
+      paths:
+        # FastAPI (documenti, confronti, etc.) su porta 2025
+        - path: /api/v0
+          pathType: Prefix
+          backend:
+            service:
+              name: ${APP_NAME}-service
+              port:
+                number: 2025
+        # Azure Functions (upload, job, durable) su porta 7071
+        - path: /api
+          pathType: Prefix
+          backend:
+            service:
+              name: ${APP_NAME}-service
+              port:
+                number: 7071
+  - host: ${FE_HOSTNAME}
+    http:
+      paths:
+        # FastAPI su porta 2025
+        - path: /api/v0
+          pathType: Prefix
+          backend:
+            service:
+              name: ${APP_NAME}-service
+              port:
+                number: 2025
+        # Azure Functions (upload, job) su porta 7071
+        - path: /api
+          pathType: Prefix
+          backend:
+            service:
+              name: ${APP_NAME}-service
+              port:
+                number: 7071

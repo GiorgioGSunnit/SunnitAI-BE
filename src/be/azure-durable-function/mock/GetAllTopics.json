@@ -1,0 +1,59 @@
+{
+  "status": "success",
+  "data": [
+    {
+      "name": "Financial Compliance",
+      "total": 168,
+      "files": [
+        {
+          "name": "POL_GRP_Investor_ Relations_ Rating_Agencies_GRP_2.2_2022.10.05.pdf",
+          "distance": 0.765423
+        },
+        {
+          "name": "Policy di Gruppo Missioni_20240318_v2.pdf",
+          "distance": 0.479623
+        },
+        {
+          "name": "POL_GRP_Modello di Remunerazione_v2.0_2024.03.18_Clean_v2.pdf",
+          "distance": 0.523198
+        }
+      ]
+    },
+    {
+      "name": "Credit Assessment",
+      "total": 95,
+      "files": [
+        {
+          "name": "POL_GRP_Nomina Dirigente_1.2_CLEAN_v3.pdf",
+          "distance": 0.626318
+        },
+        {
+          "name": "POL_GRP_Sanzioni_Embarghi_v 2.7_2024.04.22.pdf",
+          "distance": 0.752134
+        },
+        {
+          "name": "POL_GRP_incarichi esterni_2.0_2024.04.12_v2.pdf",
+          "distance": 0.498729
+        }
+      ]
+    },
+    {
+      "name": "Insurance Policy Review",
+      "total": 278,
+      "files": [
+        {
+          "name": "Policy di Gruppo_Gestione Spazi di lavoro_v.1.1_CLEAN.pdf",
+          "distance": 0.789341
+        },
+        {
+          "name": "POL_GRP_Performance Review_v1.0_2023.11.30_v2.pdf",
+          "distance": 0.482917
+        },
+        {
+          "name": "POL_GRP_Mod_ 231_v.2.0_CLEAN.pdf",
+          "distance": 0.622541
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+these are the general rules to always follow in this app:
+
+this is a be with deployment on azure for a  python project using langchain for managing analysis of documents via open ai api.
+
+
+flusso:
+
+quando pushamo il codice, viene attivata pipeline su gitlab, che builda immagine docker
+poi immagine viene messa su azure, e viene istanziato un pod su kubernetes;
+
+a noi interessa che il pod sia running;
+quindi il tuo compito, quando dico "tentiamo rilascio", o piu' brevemente "Π",
+e':
+pushare aggiornamenti del codice;
+monitorare la pipeline di gitlab;
+poi andare a vedere stato e logs del pod di azure;
+quindi capire se ci sono problemi, nel caso risolverli, e ripetere il ciclo;
+
+cerchiamo sempre di ridurre i tempi e ottimizzare;
+non usare sleep, che si perdono le giornate
+
+
+
+noi non abbiamo i permessi per accedere al keyvault, o per settare o leggere i secrets; 
+l'iniezione dei secrets nell'env avviene a runtime tramite degli scripts in core e utils
+dobbiamo capire se funzionano;
+
+per interagire con il pod userai comandi del tipo:  
+
+kubectl exec aiac-be-service-9c6df6b7f-7fb5r -n aiac -- sh -c ' 
+
+(verifica che il nome pod sia corretto, altrimenti cambialo)

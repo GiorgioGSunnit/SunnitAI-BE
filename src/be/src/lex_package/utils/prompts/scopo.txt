@@ -1,0 +1,13 @@
+viene fornito il testo di un articolo di un regolamento emendativo.
+
+analizzalo e produci un json conforme al tipo typescript: 
+
+{ 
+operazione: "aggiunta" | "rimozione" | "sostituzione";
+cosa: "articolo" | "comma" | "piu articoli"; 
+riferimentoDoc1: str[];   // array di stringhe della forma ['Articolo n', 'comma x', 'numero y'] necessario ad individuare il pezzo modificato in doc1 
+}
+
+operazionea --- indica il tipo di modifica che deve essere effettuata
+cosa --- indica il tipo di elemento che deve essere modificato
+riferimentoDoc1 --- un array di stringhe che indica il riferimento al regolamento originale che deve essere emendato, fornisce le coordinare per individuare il pezzo da modificare

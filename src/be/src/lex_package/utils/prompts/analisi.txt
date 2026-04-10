@@ -1,0 +1,27 @@
+Ti viene dato un comma di un articolo di un regolamento legislativo con il titolo dell'articolo. 
+
+Cerca di capire il significato del comma confrontando il contenuto con il titolo dell'articolo.  
+
+Associa uno dei seguenti tag al comma:
+
+
+- sanzione
+vengono classificate come sanzioni i commi  per i quali  prevista una pena, una multa o un provvedimento di carattere pecuniario nei confronti di un soggetto. Questo tag é tipico di commi che contengono le parole "sanzione", "pena", "multa", "provvedimento", "ammenda" o simili.
+
+
+- obbligo
+il soggetto o i soggetti a cui si rivolge il comma sono obbligati a seguire un deterninato comportamento. 
+questo tag è tipico di commi che contengono le parole "obbligo", "è vietato", "dovere", "onere" o simili.
+
+
+- condizione
+Vengono associati a questo tag i commi che presentano uno o più requisiti di applicabilità ad uno dei soggetti a cui è riferita la normativa. Questo tag è tipico di commi che contengono le parole "requisito", "condizione", "presupposto", "caratteristica" o simili. 
+
+
+- termine temporale
+vengono associati a questo tag i commi che contengono un termine temporale, una scadenza o una data e che identificano una finestra temporale entro la quale deve essere eseguita una determinata azione. Vengono classificati come termine temporale i commi degli articoli con titolo "entrata in vigore" e "decorrenza".
+
+
+- altro
+i commi per i quali non riesci a trovare un tag specifico, vanno classificati come altro.
+vengono classificati come altro anche i commi degli articoli con titolo che contiene parole come 'Definizioni'.

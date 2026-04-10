@@ -1,0 +1,63 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+cache.db
+logs.db
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# Environments
+.env
+.venv
+.venv_*/*
+.cache
+.cache/*
+.parcel-cache
+.parcel-cache/*
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+*.log
+log*/*
+*/*/node_modules
+*/*/node_modules/*
+
+.vscode
+.vscode/
+
+/search_example_results.json
+/src/lex_package/emendativa-test.json
+/src/lex_package/confronto_search/test/
+vmai_key.ppk
+
+.cursor
+note
+*.pdf

@@ -1,0 +1,41 @@
+Crea un elenco puntato come se tu fossi un senior compliance analyst, e fai un'analisi logica (citando i passaggi LETTERALMENTE come se stessi facendo copia-incolla) dei singoli articoli dei documenti normativi A e B che ti vengono forniti.
+
+Concentrati lavorando per identificare ogni singolo articolo, procedendo RIGOROSAMENTE seguendo l'ordine numerico delle pagine in senso crescente, dal primo all'ultimo. 
+Utilizza i valori di "pattern_type" e i dati provenienti dal "core-text" per identificare il significato dell'ambito di similitudine esistente tra requisiti dei due documenti.
+Esamina il contenuto presente in "requirements" per comprendere il significato del requisito e confronta significato con significato, non solo in modo testuale.
+Per ogni requisito, esamina prima il primo Documento e poi il secondo Documento prima di passare al requisito successivo. Prima di dichiarare un requisito come "Non presente", ricontrolla accuratamente entrambi i documenti per verificare che il requisito non sia effettivamente presente in altra forma o posizione. Quando dichiari un articolo come "Non presente", SCRIVI una motivazione accurata che determina la MOTIVAZIONE di questa dichiarazione da parte tua.
+ 
+Usa i requisiti come base della tua analisi facendo emergere evidenze e citando i passaggi che riguardano:
+ 
+1. Modifiche sostanziali nei requisiti o nelle disposizioni
+2. Nuove introduzioni o rimozioni di obblighi
+3. Cambiamenti nella portata o nell'applicabilità delle norme
+4. Impatto pratico delle modifiche:
+   - Analisi qualitativa degli effetti
+   - Stima quantitativa dell'impatto economico/operativo
+5. Sanzioni
+6. Identificazione dei soggetti colpiti dalla normativa
+7. Verifica della coerenza temporale tra le disposizioni
+8. Rimandi ad altre normative o standard rilevanti
+ 
+Per ogni articolo analizzato, cita esplicitamente:
+- La fonte (documento e posizione)
+- L'inizio del testo dell'articolo per conferma
+- La citazione letterale dei passaggi rilevanti
+ 
+Una delle tabelle che andrai a creare consisterà esattamente nel report di confronto dove nella prima colonna avremo l'indicazione del requisito e di seguito le differenze, inclusi i casi in cui non ci sono variazioni tra gli articoli corrispondenti.
+ 
+Verifica che il ragionamento sia logicamente coerente e che le conclusioni derivino correttamente dalle premesse fornite. Considera la gerarchia delle fonti e le relazioni tra norme di diverso livello. Includi riferimenti specifici agli articoli/commi rilevanti. Ricontrolla per assicurarti che la tua risposta non contenga errori logici, omissioni relative a elementi che in realtà sono presenti nei testi di partenza, errori di sintassi o ripetizioni.
+
+Documenti da analizzare:
+{context}
+
+Importante: se non sei abbastanza sicuro dell'esattezza di una tua conclusione su un cambiamento messo in atto da un articolo emendativo, ripeti l'analisi del cambiamento dell'articolo emendativo. Se dopo la verifica non sei sicuro dell'esattezza del risultato, scrivi solo 'LLM non abbastanza potente per ottenere risultato attendibile' 
+ 
+ 
+Fornisci un'analisi strutturata e logica delle differenze significative, evidenziando le implicazioni pratiche per la compliance.
+
+
+IMPORTANTE: quando ti riferisci a i documenti normativi, indicali sempre con i nomi dei files.
+
+Nei risultati identifica **SEZIONE ORIGINALE** e **NUOVA SEZIONE** riportando il nome del file pdf che è riportato nell'intestazione del Json come "source_file".

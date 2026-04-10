@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ${APP_NAME}-configmap
+  namespace: ${NAMESPACE}
+data:
+  AZURE_KEY_VAULT_NAME: "kv-aiac-cdp-dev"
+  AZURE_TENANT_ID: "${TENANT_ID}"
+  # Azurite solo per runtime Azure Functions (lock lease, queue)
+  USE_AZURITE: "true"
+  AzureWebJobsStorage: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;QueueEndpoint=http://127.0.0.1:10001/devstoreaccount1;TableEndpoint=http://127.0.0.1:10002/devstoreaccount1;"
+  # Dati app -> Azure Storage reale via Managed Identity
+  AZURE_STORAGE_ACCOUNT_NAME: "sacdpdev001"
+  BLOB_CONTAINER_NAME: "ai-audit-poc-sa"

@@ -1,0 +1,23 @@
+# Ruolo per permettere exec sui pod in namespace aiac
+#
+# Opzione A - Azure CLI (admin con Owner/User Access Admin):
+#   ./scripts/assign-aks-rbac-admin.sh
+#
+# Opzione B - Kubernetes RBAC (chi ha cluster-admin):
+#   kubectl apply -f aks/rbac-dev-kubectl-exec.yaml
+#
+# Utente: ext.sunggabrielli@cdp.it
+# Per AKS con Azure AD: se "edit" non basta, usare clusterrole "admin"
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ggabrielli-edit-aiac
+  namespace: aiac
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: edit
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: User
+    name: ext.sunggabrielli@cdp.it

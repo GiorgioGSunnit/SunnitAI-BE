@@ -1,0 +1,55 @@
+# autoscaling with HPA
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ${APP_NAME}-hpa
+  namespace: ${NAMESPACE}
+spec:
+  scaleTargetRef:
+  # name of the service to watch for autoscale
+    apiVersion: apps/v1
+    kind: Deployment
+    name: ${APP_NAME}-service
+  # setting min e max replica for scaling
+  minReplicas: 1
+  maxReplicas: 5
+  # check both CPU and RAM as metrics for scaling
+  metrics:
+  - type: Resource
+    # if CPU usage is over 65% scale up
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 65
+  - type: Resource
+    # if Memory usage is over 70% scale up
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 70
+  # 
+  behavior:
+    # controlling scale down behavior
+    scaleDown:
+      # long stabilization, metrics must be stable for 5min before scaling down.
+      # Avoid scaling down too quickly during temporary traffic drops
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent # specify a % of pods to remove
+        value: 10
+        periodSeconds: 60
+    # controlling scale up behavior
+    scaleUp:
+      # shorter time for stabilization, we want to be sure to scale up faster
+      # scaling if for 60s metrics are over the setted %
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent # specify a % of pods to scale up
+        value: 100
+        periodSeconds: 15
+      # alternative to percent, scale up 2 pods each 60s if necessary (max set by maxReplicas)
+      # - type: Pods 
+      #   value: 2
+      #   periodSeconds: 60

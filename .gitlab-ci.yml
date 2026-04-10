@@ -1,0 +1,238 @@
+################################################################################
+#                                                                              #
+#   Copyright (c) 2021 Cassa Depositi e Prestiti SpA                           #
+#                                                                              #
+################################################################################
+
+variables:
+  GIT_DEPTH: 1
+  DOCKER_REGISTRY: "$AZ_CONTAINER_REGISTRY"
+  IMAGE_TAG: $CI_PIPELINE_ID
+  DOCKER_IMG_NAME: "$DOCKER_REGISTRY/cdp/$CI_PROJECT_NAMESPACE/$APP_NAME:$IMAGE_TAG"
+  # Fix: Override KV name - kv-dev-cdp-01 doesn't have AIAC secrets
+  AKS_KV_NAME: "kv-aiac-cdp-dev"
+  AKS_KEY_VAULT_URL: "https://${AKS_KV_NAME}.vault.azure.net"
+  # Fix: WORKLOAD_CLIENT_ID in GitLab Settings has typo "I" prefix
+  WORKLOAD_CLIENT_ID: "966176be-711b-4f2f-8b80-dce08b14a8e2"
+
+# L'immagine di base
+image: $CI_REGISTRY/cdp/dockers/azure-build:azcli-2.69.0-kubectl-1.30.9
+
+# Stage previsti
+stages:
+  - init
+  - build
+  - deploy
+
+# Effettua la build dell'immagine e la push sul container registry
+.build: &build_definition
+  image:
+    name: gcr.io/kaniko-project/executor:v1.15.0-debug
+    entrypoint: [""]
+  stage: build
+  script:
+    - echo "{\"auths\":{\"${DOCKER_REGISTRY}\":{\"auth\":\"$(printf "%s:%s" "${ARM_CLIENT_ID}" "${ARM_CLIENT_SECRET}" | base64 | tr -d '\n')\"}}}" > /kaniko/.docker/config.json
+    - /kaniko/executor --context $CI_PROJECT_DIR --dockerfile Dockerfile --destination $DOCKER_IMG_NAME
+  tags:
+    - azure
+
+# Inizializzazione dell'ingress e altre attività di inizializzazione
+.init: &init_definition
+  stage: init
+  script:
+    # login as service principal
+    - az login --service-principal -u $ARM_CLIENT_ID -p $ARM_CLIENT_SECRET --tenant $ARM_TENANT_ID
+
+    # set subscription
+    - az account set --subscription $ARM_SUBSCRIPTION_ID
+
+    # connection to aks
+    - az aks get-credentials --resource-group $RG_AKS_NAME --name $AKS_NAME --overwrite-existing
+    - kubelogin convert-kubeconfig -l azurecli
+
+    # Creazione del namespace per l'applicativo, solo se non esiste già
+    - if ! kubectl get namespace $NAMESPACE 2>/dev/null; then
+      kubectl create namespace $NAMESPACE
+    - else 
+      echo "namespace already deployed, skipping deployment."
+    - fi
+    
+    # set variables for secret-provider TLS
+    - sed -i -e "s|\${APP_NAME}|$APP_NAME|g" aks/ingress/secret-provider.yaml
+    - sed -i -e "s|\${TENANT_ID}|$ARM_TENANT_ID|g" aks/ingress/secret-provider.yaml
+    - sed -i -e "s|\${TLS_OBJ_NAME}|$TLS_OBJ_NAME|g" aks/ingress/secret-provider.yaml
+    - sed -i -e "s|\${AKS_KV_NAME}|$AKS_KV_NAME|g" aks/ingress/secret-provider.yaml
+    - sed -i -e "s|\${SERVICE_PRINCIPAL_CLIENT_ID}|$SERVICE_PRINCIPAL_CLIENT_ID|g" aks/ingress/secret-provider.yaml
+    - sed -i -e "s|\${NAMESPACE}|${NAMESPACE}|g" aks/ingress/secret-provider.yaml
+
+    # set variables for secret-provider APP (for app secrets)
+    - sed -i -e "s|\${APP_NAME}|$APP_NAME|g" aks/ingress/secret-provider-app.yaml
+    - sed -i -e "s|\${TENANT_ID}|$ARM_TENANT_ID|g" aks/ingress/secret-provider-app.yaml
+    - sed -i -e "s|\${AKS_KV_NAME}|$AKS_KV_NAME|g" aks/ingress/secret-provider-app.yaml
+    - sed -i -e "s|\${WORKLOAD_CLIENT_ID}|$WORKLOAD_CLIENT_ID|g" aks/ingress/secret-provider-app.yaml
+    - sed -i -e "s|\${NAMESPACE}|${NAMESPACE}|g" aks/ingress/secret-provider-app.yaml
+
+    # applying secrets
+    - kubectl apply -f aks/ingress/secret-provider.yaml
+    - kubectl apply -f aks/ingress/secret-provider-app.yaml
+  tags:
+    - azure
+
+# Effettua le operazioni necessarie al deploy (es. aggiornamento template Kubernates, etc.)
+.deploy: &deploy_definition
+  stage: deploy
+  script:
+    # login as service principal
+    - az login --service-principal -u $ARM_CLIENT_ID -p $ARM_CLIENT_SECRET --tenant $ARM_TENANT_ID
+    # set subscription
+    - az account set --subscription $ARM_SUBSCRIPTION_ID
+    # connection to aks
+    - az aks get-credentials --resource-group $RG_AKS_NAME --name $AKS_NAME --overwrite-existing
+    - kubelogin convert-kubeconfig -l azurecli
+
+    # attach del registry all'aks
+    # Get the client ID of the kubelet managed identity (for MSI-enabled clusters)
+    - AKS_OBJ_ID=$(az aks show --name $AKS_NAME --resource-group $RG_AKS_NAME --query "identityProfile.kubeletidentity.objectId" -o tsv)
+    # Check if AcrPull role is assigned on the ACR
+    - ACR_ASSIGNED=$(az role assignment list --scope $CR_PATH --query "[?principalId=='$AKS_OBJ_ID' && roleDefinitionName=='AcrPull']" -o tsv)
+    - if [ -z "$ACR_ASSIGNED" ]; then
+        echo "AcrPull role not found. Attaching ACR...";
+        az aks update --name $AKS_NAME --resource-group $RG_AKS_NAME --attach-acr $CR_PATH
+      else
+        echo "AcrPull role already assigned. Skipping az aks update.";
+      fi
+  
+    # configurazione delle variabili sul file di deployment
+    - sed -i "s|\${IMAGE_NAME}|${DOCKER_IMG_NAME}|g" aks/deployment.yaml
+    - sed -i "s|\${APP_NAME}|${APP_NAME}|g" aks/deployment.yaml
+    - sed -i "s|\${NAMESPACE}|${NAMESPACE}|g" aks/deployment.yaml
+
+    # configurazione delle variabili sul file di HPA
+    - sed -i "s|\${APP_NAME}|${APP_NAME}|g" aks/HPA.yaml
+    - sed -i "s|\${NAMESPACE}|${NAMESPACE}|g" aks/HPA.yaml
+
+    # configurazione delle variabili sul file di Service Account
+    - sed -i "s|\${APP_NAME}|${APP_NAME}|g" aks/service-account.yaml
+    - sed -i "s|\${NAMESPACE}|${NAMESPACE}|g" aks/service-account.yaml
+    - sed -i "s|\${WORKLOAD_CLIENT_ID}|$WORKLOAD_CLIENT_ID|g" aks/service-account.yaml
+    - kubectl apply -f aks/service-account.yaml
+    - az identity federated-credential create --name $NAMESPACE-federated-credential --identity-name id-aks-aiac-dev --resource-group rg-aiac-svil --issuer $OIDC_ISSUER_URL --subject system:serviceaccount:$NAMESPACE:$NAMESPACE-sa
+
+    # configurazione delle variabili sul file di Config Map
+    - sed -i "s|\${APP_NAME}|${APP_NAME}|g" aks/configs/configmap-${CI_ENVIRONMENT_SLUG}.yaml
+    - sed -i "s|\${NAMESPACE}|${NAMESPACE}|g" aks/configs/configmap-${CI_ENVIRONMENT_SLUG}.yaml
+    - sed -i "s|\${TENANT_ID}|${ARM_TENANT_ID}|g" aks/configs/configmap-${CI_ENVIRONMENT_SLUG}.yaml
+
+    # deploy della configmap con le variabili d'ambiente necessarie
+    - kubectl apply -f aks/configs/configmap-${CI_ENVIRONMENT_SLUG}.yaml
+
+    # Se il deployment esiste, scala i pod a 0
+    #- |
+    #  if kubectl get deployment ${APP_NAME}-service -n $NAMESPACE &>/dev/null; then
+    #    echo "Scaling down deployment to 0 replicas"
+    #    kubectl scale deployment/${APP_NAME}-service --replicas=0 -n $NAMESPACE
+    #    kubectl rollout status deployment/${APP_NAME}-service -n $NAMESPACE
+    #  fi
+
+    # apply deployment config
+    - echo "Applying deployment.yaml"
+    - kubectl apply -f aks/deployment.yaml
+    
+    - echo "Updating image and rolling out"
+    - kubectl set image deployment/${APP_NAME}-service ${APP_NAME}-container=$DOCKER_IMG_NAME -n $NAMESPACE
+    - kubectl rollout status deployment/${APP_NAME}-service -n $NAMESPACE
+
+    # deploy del ingress controller
+    - sed -i "s|\${APP_NAME}|${APP_NAME}|g" aks/ingress/ingress-controller.yaml
+    - sed -i "s|\${TLS_OBJ_NAME}|${TLS_OBJ_NAME}|g" aks/ingress/ingress-controller.yaml
+    - sed -i "s|\${NAMESPACE}|${NAMESPACE}|g" aks/ingress/ingress-controller.yaml
+    - sed -i "s|\${APP_HOSTNAME}|${APP_HOSTNAME}|g" aks/ingress/ingress-controller.yaml
+    - sed -i "s|\${FE_HOSTNAME}|${FE_HOSTNAME}|g" aks/ingress/ingress-controller.yaml
+    - sed -i "s|\${AKS_KEY_VAULT_URL}|${AKS_KEY_VAULT_URL}|g" aks/ingress/ingress-controller.yaml
+    - kubectl apply -f aks/ingress/ingress-controller.yaml
+
+    # deploy autoscaler
+    - kubectl apply -f aks/HPA.yaml
+  tags:
+    - azure
+    
+###################################
+# DEV
+###################################
+init-dev:
+  <<: *init_definition
+  environment:
+    dev
+  only:
+    - master
+
+build-dev:
+  <<: *build_definition
+  environment:
+    dev
+  only:
+    - master
+
+deploy-dev:
+  <<: *deploy_definition
+  variables:
+    APP_HOSTNAME: "dev-${APP_NAME}.cdp.it"
+    FE_HOSTNAME: "dev-aiac-fe.cdp.it"
+  environment:
+    dev
+  only:
+    - master
+
+###################################
+# TEST
+##################################
+init-test:
+  <<: *init_definition
+  environment:
+    test
+  only:
+    - test
+
+build-test:
+  <<: *build_definition  
+  environment:
+    test
+  only:
+    - test
+
+deploy-test:
+  <<: *deploy_definition
+  variables:
+    APP_HOSTNAME: "test-${APP_NAME}.cdp.it"
+    FE_HOSTNAME: "test-aiac-fe.cdp.it"
+  environment:
+    test
+  only:
+    - test
+
+###################################
+# PROD
+###################################
+init-prod:
+  <<: *init_definition
+  environment:
+    prod
+  only:
+    - prod
+
+build-prod:
+  <<: *build_definition
+  environment:
+    prod
+  only:
+    - prod
+
+deploy-prod:
+  <<: *deploy_definition
+  variables:
+    APP_HOSTNAME: "${APP_NAME}.cdp.it"
+    FE_HOSTNAME: "aiac-fe.cdp.it"
+  environment:
+    prod
+  only:
+    - prod

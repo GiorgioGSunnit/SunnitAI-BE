@@ -1,0 +1,37 @@
+Coppie per confronto attuativo (path relativi sotto: C:\Users\quantis\aiac-be\Documenti Da Analizzare)
+Formato: FILE1<TAB>FILE2
+# FILE1 = norma esterna (prefisso EXT o Documento 285*) — inviato come file1 nella POST
+# FILE2 = regolamento interno (prefisso INT) — inviato come file2 nella POST
+
+AML\EXT_1_1_Provvedimento UIF su indicatori di anomalia_12_05_2023.pdf	AML\INT_1_1_REG_Indicatori_di_anomalia_AR_7.0__2024.12.09.pdf
+AML\EXT_1_2_Disposizioni AVC_30_07_2019 (Banca Italia).pdf	AML\INT_1_2_PRC_Gest._Ademp._AR_v.10.4_23.12.2025.pdf
+AML\EXT_1_D.Lgs. 231_2007_gazzetta ufficiale_pdf.pdf	AML\INT_1_POL_GRP_Antiriciclaggio_v5.0_27.11.2023_Clean.pdf
+GESTIONE OUTSOURCING\EXT_2_Regolamento (UE) 2022_2554 - (DORA).pdf	GESTIONE OUTSOURCING\INT_2_REG_Gestione_rischi_info_servizi_terze_parti_20251203.pdf
+285\Documento 285 - Parziale - 001-206.pdf	GESTIONE OUTSOURCING\INT_2_REG_Gestione_rischi_info_servizi_terze_parti_20251203.pdf
+285\Documento 285 - Parziale - 207-399.pdf	GESTIONE OUTSOURCING\INT_2_REG_Gestione_rischi_info_servizi_terze_parti_20251203.pdf
+285\Documento 285 - Parziale - 400-561.pdf	GESTIONE OUTSOURCING\INT_2_REG_Gestione_rischi_info_servizi_terze_parti_20251203.pdf
+285\Documento 285 - Parziale - 562-702.pdf	GESTIONE OUTSOURCING\INT_2_REG_Gestione_rischi_info_servizi_terze_parti_20251203.pdf
+285\Documento 285 - Parziale - 703-815.pdf	GESTIONE OUTSOURCING\INT_2_REG_Gestione_rischi_info_servizi_terze_parti_20251203.pdf
+285\Documento 285 - Parziale - 001-206.pdf	ICAAP_ILAAP\INT_3_1_Collegato_Sistema_degli_obiettivi_patrimoniali_19.12.2025.pdf
+285\Documento 285 - Parziale - 207-399.pdf	ICAAP_ILAAP\INT_3_1_Collegato_Sistema_degli_obiettivi_patrimoniali_19.12.2025.pdf
+285\Documento 285 - Parziale - 400-561.pdf	ICAAP_ILAAP\INT_3_1_Collegato_Sistema_degli_obiettivi_patrimoniali_19.12.2025.pdf
+285\Documento 285 - Parziale - 562-702.pdf	ICAAP_ILAAP\INT_3_1_Collegato_Sistema_degli_obiettivi_patrimoniali_19.12.2025.pdf
+285\Documento 285 - Parziale - 703-815.pdf	ICAAP_ILAAP\INT_3_1_Collegato_Sistema_degli_obiettivi_patrimoniali_19.12.2025.pdf
+285\Documento 285 - Parziale - 001-206.pdf	ICAAP_ILAAP\INT_3_PG_Rischi_19.12.2025.pdf
+285\Documento 285 - Parziale - 207-399.pdf	ICAAP_ILAAP\INT_3_PG_Rischi_19.12.2025.pdf
+285\Documento 285 - Parziale - 400-561.pdf	ICAAP_ILAAP\INT_3_PG_Rischi_19.12.2025.pdf
+285\Documento 285 - Parziale - 562-702.pdf	ICAAP_ILAAP\INT_3_PG_Rischi_19.12.2025.pdf
+285\Documento 285 - Parziale - 703-815.pdf	ICAAP_ILAAP\INT_3_PG_Rischi_19.12.2025.pdf
+285\Documento 285 - Parziale - 001-206.pdf	ICAAP_ILAAP\INT_4_PRC_Det adeg sist gov e gestione rischio liquidit__v2.0_17.07.2024.pdf
+285\Documento 285 - Parziale - 207-399.pdf	ICAAP_ILAAP\INT_4_PRC_Det adeg sist gov e gestione rischio liquidit__v2.0_17.07.2024.pdf
+285\Documento 285 - Parziale - 400-561.pdf	ICAAP_ILAAP\INT_4_PRC_Det adeg sist gov e gestione rischio liquidit__v2.0_17.07.2024.pdf
+285\Documento 285 - Parziale - 562-702.pdf	ICAAP_ILAAP\INT_4_PRC_Det adeg sist gov e gestione rischio liquidit__v2.0_17.07.2024.pdf
+285\Documento 285 - Parziale - 703-815.pdf	ICAAP_ILAAP\INT_4_PRC_Det adeg sist gov e gestione rischio liquidit__v2.0_17.07.2024.pdf
+MONITORAGGIO FONDI PROPRI\EXT_5_EBA 2020 GL Loan origination and monitoring_IT.pdf	MONITORAGGIO FONDI PROPRI\INT_5_Regolamento_del_Credito_13.05.2025.pdf
+MONITORAGGIO FONDI PROPRI\EXT_5_1_EBA 2018 GL NPE_FBE_IT.pdf	MONITORAGGIO FONDI PROPRI\INT_5_Regolamento_del_Credito_13.05.2025.pdf
+SICUREZZA LOGICA\EXT_6_1_Final draft Guidelines on ICT and security risk management_COR_IT.pdf	SICUREZZA LOGICA\INT_6_REG_Gestione_del_Rischio_ICT_20250325_clean.pdf
+285\Documento 285 - Parziale - 001-206.pdf	SICUREZZA LOGICA\INT_6_REG_Gestione_del_Rischio_ICT_20250325_clean.pdf
+285\Documento 285 - Parziale - 207-399.pdf	SICUREZZA LOGICA\INT_6_REG_Gestione_del_Rischio_ICT_20250325_clean.pdf
+285\Documento 285 - Parziale - 400-561.pdf	SICUREZZA LOGICA\INT_6_REG_Gestione_del_Rischio_ICT_20250325_clean.pdf
+285\Documento 285 - Parziale - 562-702.pdf	SICUREZZA LOGICA\INT_6_REG_Gestione_del_Rischio_ICT_20250325_clean.pdf
+285\Documento 285 - Parziale - 703-815.pdf	SICUREZZA LOGICA\INT_6_REG_Gestione_del_Rischio_ICT_20250325_clean.pdf

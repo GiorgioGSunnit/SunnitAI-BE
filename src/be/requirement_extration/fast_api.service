@@ -1,0 +1,12 @@
+[Unit]
+Description=Fast API service
+
+[Service]
+User=azureuser
+Group=azureuser
+ExecStart=/home/azureuser/aiac-be/requirement_extration/requirement_extration/run_fast_api_as_deamon.sh
+Restart=always
+SuccessExitStatus=143
+
+[Install]
+WantedBy=multi-user.target

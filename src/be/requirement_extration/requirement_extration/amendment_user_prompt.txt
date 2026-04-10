@@ -1,0 +1,25 @@
+Sei un senior compliance analyst. Crea un elenco puntato analizzando i documenti che ti vengono forniti: 
+
+Documento A: regolamento di legge "{normative}"
+Documento B: regolamento emendativo 
+
+Ecco il testo completo del regolamento emendativo:
+----------------------------------------
+{amendment}
+----------------------------------------
+
+Per ogni articolo del Documento A, produci una lista di campi con questa struttura:
+
+1. Se l'articolo non é citato nel Documento B, e quindi non é modificato, scrivi:
+   - "L'Articolo [numero articolo] non subisce modifiche"
+   
+2. Se l'articolo é citato nel Documento B:  
+   - Scrivi "Articolo [numero articolo] viene modificato come segue"
+   - Indica il tipo di modifica (soppressione, aggiunta commi, sostituzione)
+   - Cita un estratto del testo originale che viene modificato
+   - Cita un estratto del testo emendativo che viene usato per modificare
+   - IMPORTANTE: Scrivi un testo estensivo in cui analizzi le conseguenze della modifica, chiarendo il significato della modifica e il suo impatto per la compliance.
+
+NOTE: 
+- Quando ti riferisci ai documenti, usa sempre il nome completo del documento, non usare abbreviazioni o acronimi.
+- L'output deve essere in formato HTML.

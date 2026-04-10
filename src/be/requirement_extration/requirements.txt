@@ -1,0 +1,30 @@
+azure-storage-blob>=12.24.0,<13.0
+azure-search-documents==11.5.2
+PyPDF2==3.0.1
+pandas==2.1.4
+numpy==1.26.4
+tqdm==4.66.6
+ipywidgets==8.0.4
+python-dotenv~=1.0.1
+pymilvus==2.4.9
+# transformers==4.46.1  # Removed - using lex_package
+# torch==2.5.1  # Removed - using lex_package
+spacy==3.7.5
+pdfminer.six==20240706
+PyMuPDF==1.24.13
+fastapi[standard]>=0.115.0,<1.0
+pydantic>=2.7.0,<3.0.0
+openpyxl==3.1.5
+XlsxWriter==3.2.0
+markdown2==2.5.1
+openai==1.59.9
+python-Levenshtein==0.26.1
+fuzzywuzzy==0.18.0
+# sentence-transformers==3.3.1  # Removed - using lex_package
+tiktoken==0.8.0
+aiofiles==24.1.0
+langchain==0.3.18
+langchain-cli==0.0.36
+langchain-community==0.3.15
+langchain-core==0.3.34
+langchain-openai==0.3.4
