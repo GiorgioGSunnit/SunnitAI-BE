@@ -68,6 +68,13 @@ async def cli():
         help="modalita per solo parsing, inserisci il numero del file da analizzare: esempio per parsare documento 1, si scrive: python3 cli.py --parse 1",
     )
     parser.add_argument(
+        "--template",
+        type=str,
+        default=None,
+        help="forza il template di parsing (es. boe, banca, gazzetta_ue, regolamento). "
+             "Se non specificato, il profiler seleziona automaticamente il template.",
+    )
+    parser.add_argument(
         "-a",
         type=str,
         help="modalita a per analisi, A il numero  del file da analizzare, esempio per analizzare documento 1: python3 cli.py -a 1",
@@ -143,6 +150,7 @@ async def cli():
         "v": args.v,
         "sas": args.sas,
     }
+    template_hint: str | None = args.template
 
     # vedi quale é stato selezionato
     selected_mode_key = [k for k, v in modes.items() if v is not None]
@@ -156,7 +164,7 @@ async def cli():
         case "parse":
             pdf_name = modes[selected_mode_key[0]]
             print(f"Parse mode selected for {pdf_name}")
-            run_parse(pdf_name)
+            run_parse(pdf_name, template_hint=template_hint)
 
         case "a":
             pdf_name = modes[selected_mode_key[0]]
@@ -231,7 +239,7 @@ async def cli():
     }
 
 
-def run_parse(pdf_name):
+def run_parse(pdf_name, template_hint: str | None = None):
     data_dir = Path(_SRCDIR / "data")
     # regex per matchare "pdf_name."
     pattern = re.compile(rf"^{re.escape(pdf_name)}\.")
@@ -251,7 +259,12 @@ def run_parse(pdf_name):
     output_file_dir.mkdir(parents=True, exist_ok=True)
     output_file_path = output_file_dir / f"{pdf_name}.json"
 
-    res = parse(pdf_path, pdf_name, output_file_path_str=str(output_file_path))
+    res = parse(
+        pdf_path,
+        pdf_name,
+        output_file_path_str=str(output_file_path),
+        template_hint=template_hint,
+    )
 
     return res
 
