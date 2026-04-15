@@ -1,0 +1,64 @@
+{
+  "id": "regolamento",
+  "label": "Regolamento / Normativa Italiana Generica",
+  "priority": 5,
+  "threshold": 2,
+  "max_score": 5,
+  "user_aliases": [
+    "regolamento",
+    "normativa",
+    "normativa italiana",
+    "legge",
+    "decreto",
+    "decreto legislativo",
+    "dlgs",
+    "d.lgs",
+    "d.lgs.",
+    "circolare",
+    "istruzione"
+  ],
+  "structure": {
+    "has_index": true,
+    "header_lines": 1,
+    "footer_lines": 1,
+    "title_font_size_min": 11.0,
+    "body_font_name_hint": null,
+    "language": "it"
+  },
+  "scoring_rules": [
+    {
+      "feature": "regex_in_head",
+      "pattern": "\\bArticolo\\s+\\d+\\b",
+      "pages": 3,
+      "points": 2,
+      "description": "Italian article numbering"
+    },
+    {
+      "feature": "regex_in_head",
+      "pattern": "\\bArt\\.\\s+\\d+\\b",
+      "pages": 3,
+      "points": 2,
+      "description": "Abbreviated article reference"
+    },
+    {
+      "feature": "regex_in_broader",
+      "pattern": "\\bconsiderando\\b",
+      "pages": 15,
+      "points": 1,
+      "description": "Recital keyword"
+    },
+    {
+      "feature": "regex_in_broader",
+      "pattern": "\\bcomma\\s+\\d+\\b",
+      "pages": 15,
+      "points": 1,
+      "description": "Comma (paragraph) reference"
+    },
+    {
+      "feature": "filename_contains",
+      "values": ["regolamento", "normativa", "circolare", "decreto"],
+      "points": 1,
+      "description": "Regulation-related filename"
+    }
+  ]
+}

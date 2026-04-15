@@ -1,0 +1,78 @@
+{
+  "id": "annex_tabular",
+  "label": "Tabular Annex (e.g. EMCS / Allegato Tabellare)",
+  "priority": 2,
+  "threshold": 5,
+  "max_score": 9,
+  "user_aliases": [
+    "annex",
+    "allegato",
+    "annex tabular",
+    "allegato tabellare",
+    "tabular",
+    "tabellare",
+    "emcs"
+  ],
+  "structure": {
+    "has_index": false,
+    "header_lines": 1,
+    "footer_lines": 1,
+    "title_font_size_min": 10.0,
+    "body_font_name_hint": null,
+    "language": "mixed"
+  },
+  "scoring_rules": [
+    {
+      "feature": "regex_in_head",
+      "pattern": "(?:Gazzetta\\s+ufficiale|Official\\s+Journal)",
+      "pages": 3,
+      "points": 2,
+      "description": "EU Official Journal masthead (annex often published there)"
+    },
+    {
+      "feature": "regex_in_head",
+      "pattern": "L\\s+\\d{1,4}\\s*/\\s*\\d{1,4}",
+      "pages": 3,
+      "points": 1,
+      "description": "EU L-series page reference"
+    },
+    {
+      "feature": "ag_header_count_ge",
+      "value": 3,
+      "points": 3,
+      "description": "3 or more pages with A-G column header row"
+    },
+    {
+      "feature": "ag_header_count_ge",
+      "value": 1,
+      "points": 2,
+      "description": "At least 1 page with A-G column header row"
+    },
+    {
+      "feature": "table_page_ratio_gt",
+      "value": 0.6,
+      "points": 1,
+      "description": "More than 60% of sampled pages contain tables"
+    },
+    {
+      "feature": "regex_in_broader",
+      "pattern": "\\ban?\\.\\.\\.?\\d+\\b",
+      "pages": 15,
+      "points": 1,
+      "description": "Data format indicators (an..N)"
+    },
+    {
+      "feature": "regex_in_head",
+      "pattern": "\\bANNEX\\b|\\bALLEGATO\\b",
+      "pages": 3,
+      "points": 1,
+      "description": "Explicit ANNEX / ALLEGATO keyword"
+    },
+    {
+      "feature": "filename_contains",
+      "values": ["emcs", "annex_tab", "allegato_tab"],
+      "points": 3,
+      "description": "Tabular-annex-related filename"
+    }
+  ]
+}

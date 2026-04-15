@@ -18,8 +18,8 @@ from .parsing_utils.document_part import DocumentPart
 
 # ─── Constants ────────────────────────────────────────────────────────────────
 
-_SPLIT_THRESHOLD = 1_000
-_SPLIT_MAX = 1_200
+_SPLIT_THRESHOLD = 10_000
+_SPLIT_MAX = 12_000
 _SENTENCE_END_RE = re.compile(r"[.!?]\s")
 
 

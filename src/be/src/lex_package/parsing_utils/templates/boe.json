@@ -1,0 +1,68 @@
+{
+  "id": "boe",
+  "label": "Boletín Oficial del Estado",
+  "priority": 1,
+  "threshold": 3,
+  "max_score": 12,
+  "user_aliases": [
+    "boe",
+    "boletin",
+    "boletín",
+    "boletín oficial",
+    "boletin oficial",
+    "boletín oficial del estado",
+    "boletin oficial del estado"
+  ],
+  "structure": {
+    "has_index": false,
+    "header_lines": 2,
+    "footer_lines": 1,
+    "title_font_size_min": 11.0,
+    "body_font_name_hint": null,
+    "language": "es"
+  },
+  "scoring_rules": [
+    {
+      "feature": "regex_in_head",
+      "pattern": "B\\.?\\s*O\\.?\\s*(?:del)?\\s*E\\.?\\s*[—\\-–]\\s*[Nn]úm\\.?\\s*\\d+",
+      "pages": 3,
+      "points": 3,
+      "description": "BOE header with issue number"
+    },
+    {
+      "feature": "regex_in_head",
+      "pattern": "Bolet[ií]n\\s+Oficial\\s+del\\s+Estado",
+      "pages": 3,
+      "points": 3,
+      "description": "Full Boletín Oficial del Estado masthead"
+    },
+    {
+      "feature": "regex_count_in_head",
+      "pattern": "^\\s*\\d{4,5}\\s+[A-ZÁÉÍÓÚÑÜ]",
+      "pages": 3,
+      "min_count": 2,
+      "points": 2,
+      "description": "Disposición entry numbers (at least 2 entries)"
+    },
+    {
+      "feature": "regex_in_head",
+      "pattern": "MINISTERIO\\s+DE\\s+",
+      "pages": 3,
+      "points": 1,
+      "description": "Ministry keyword"
+    },
+    {
+      "feature": "regex_in_head",
+      "pattern": "\\d{1,2}\\s+(?:de\\s+)?(?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\\s+(?:de\\s+)?\\d{4}",
+      "pages": 3,
+      "points": 1,
+      "description": "Spanish date pattern"
+    },
+    {
+      "feature": "filename_contains",
+      "values": ["boe", "boletin", "boletín", "estado"],
+      "points": 2,
+      "description": "BOE-related filename"
+    }
+  ]
+}

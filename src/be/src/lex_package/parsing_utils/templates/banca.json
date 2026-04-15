@@ -1,0 +1,69 @@
+{
+  "id": "banca",
+  "label": "Banca d'Italia – Disposizioni di Vigilanza",
+  "priority": 4,
+  "threshold": 3,
+  "max_score": 6,
+  "user_aliases": [
+    "banca",
+    "banca d'italia",
+    "banca ditalia",
+    "bdi",
+    "disposizioni banca",
+    "disposizioni di vigilanza",
+    "circolare banca",
+    "avc",
+    "vigilanza bancaria"
+  ],
+  "structure": {
+    "has_index": true,
+    "header_lines": 3,
+    "footer_lines": 2,
+    "title_font_size_min": 12.0,
+    "body_font_name_hint": null,
+    "language": "it"
+  },
+  "scoring_rules": [
+    {
+      "feature": "regex_in_extended",
+      "pattern": "banca\\s+d[\\'\\u2019]italia",
+      "pages": 8,
+      "points": 2,
+      "description": "Banca d'Italia name in early pages"
+    },
+    {
+      "feature": "regex_in_extended",
+      "pattern": "\\bdisposizioni\\b",
+      "pages": 8,
+      "points": 1,
+      "description": "Disposizioni keyword"
+    },
+    {
+      "feature": "regex_in_extended",
+      "pattern": "\\bparte\\s+(?:prima|seconda|terza|quarta|quinta|[ivxlc]+)\\b",
+      "pages": 8,
+      "points": 1,
+      "description": "Parte I/II/... structural keyword"
+    },
+    {
+      "feature": "regex_in_extended",
+      "pattern": "\\bcapitolo\\s+\\d+\\b",
+      "pages": 8,
+      "points": 1,
+      "description": "Capitolo N structural keyword"
+    },
+    {
+      "feature": "regex_in_extended",
+      "pattern": "\\bsezione\\s+[ivxlc0-9]+\\b",
+      "pages": 8,
+      "points": 1,
+      "description": "Sezione structural keyword"
+    },
+    {
+      "feature": "filename_contains",
+      "values": ["banca", "disposizioni", "avc", "bdi"],
+      "points": 3,
+      "description": "Banca d'Italia related filename"
+    }
+  ]
+}

@@ -21,6 +21,11 @@ sys.path.insert(0, str(_SRCDIR))
 # Now import the modules after the path has been set up
 from lex_package.analisi import analisi, consolida_analisi
 from lex_package.parse import parse
+from lex_package.arricchimento_parti import (
+    arricchisci_parti,
+    load_parts_from_parse_output,
+    merge_enriched_into_parse_output,
+)
 from lex_package.utils.flatten import (
     flatten_analisi,
     flatten_analisi_invertito,
@@ -73,6 +78,14 @@ async def cli():
         default=None,
         help="forza il template di parsing (es. boe, banca, gazzetta_ue, regolamento). "
              "Se non specificato, il profiler seleziona automaticamente il template.",
+    )
+    parser.add_argument(
+        "--enrich",
+        type=str,
+        default=None,
+        help="Part B: arricchisce le parti di un documento già parsato con abstract, "
+             "main_phrase, meaning e vector. Passare il nome del documento (es. '1'). "
+             "Legge da out_parser/<nome>.json e aggiorna il file in-place.",
     )
     parser.add_argument(
         "-a",
@@ -137,6 +150,7 @@ async def cli():
 
     modes = {
         "parse": args.parse,
+        "enrich": args.enrich,
         "a": args.a,
         "fa": args.fa,
         "e": args.e,
@@ -156,7 +170,7 @@ async def cli():
     selected_mode_key = [k for k, v in modes.items() if v is not None]
 
     # Comandi che richiedono credenziali Azure (usano LLM)
-    llm_commands = {"a", "e", "sa", "isa", "v", "sas", "t"}
+    llm_commands = {"a", "e", "sa", "isa", "v", "sas", "t", "enrich"}
     if selected_mode_key and selected_mode_key[0] in llm_commands:
         _check_azure_credentials()
 
@@ -165,6 +179,11 @@ async def cli():
             pdf_name = modes[selected_mode_key[0]]
             print(f"Parse mode selected for {pdf_name}")
             run_parse(pdf_name, template_hint=template_hint)
+
+        case "enrich":
+            doc_name = modes[selected_mode_key[0]]
+            print(f"Part B enrichment for {doc_name}")
+            await run_enrich(doc_name)
 
         case "a":
             pdf_name = modes[selected_mode_key[0]]
@@ -267,6 +286,35 @@ def run_parse(pdf_name, template_hint: str | None = None):
     )
 
     return res
+
+
+async def run_enrich(doc_name: str):
+    """Part B: enrich parts of an already-parsed document.
+
+    Reads out_parser/<doc_name>.json, runs the three-phase enrichment pipeline,
+    and writes the enriched parts back into the same file in-place.
+    """
+    data_dir = Path(_SRCDIR / "out_parser")
+    pattern = re.compile(rf"^{re.escape(doc_name)}\.")
+    matches = [p for p in data_dir.iterdir() if p.is_file() and pattern.match(p.name)]
+    if not matches:
+        raise FileNotFoundError(
+            f"Nessun file parsato in '{data_dir}' che inizi con '{doc_name}.'"
+            " Esegui prima --parse."
+        )
+
+    json_path = str(matches[0])
+    parts = load_parts_from_parse_output(json_path)
+    print(f"[INFO] Loaded {len(parts)} parts from {json_path}")
+
+    all_parts = await arricchisci_parti(parts, doc_name)
+    merge_enriched_into_parse_output(json_path, all_parts)
+
+    leaf_count = sum(1 for p in all_parts if p.get("level", "leaf") == "leaf")
+    section_count = sum(1 for p in all_parts if p.get("level") == "section")
+    print(f"[INFO] Enrichment done: {leaf_count} leaf, {section_count} section, 1 document node")
+    print(f"[INFO] Results written to {json_path}")
+    return all_parts
 
 
 async def run_anal(pdf_name: str):
