@@ -1,132 +1,207 @@
 """
-Client Azure Blob Storage con DefaultAzureCredential (Managed Identity).
-Usa sempre lo storage reale (sacdpdev001) per i dati app.
-AzureWebJobsStorage (Azurite) e' gestito separatamente dal runtime Functions.
+Local-filesystem storage client — drop-in replacement for Azure Blob Storage.
 
-Convenzione path nel container ai-audit-poc-sa:
-- *.pdf (root)     : PDF caricati
-- out/requirements/ : output estrazione (json, xlsx, flattened)
-- out/comparisons/  : output comparazioni
-- conf/             : sum.json, tokens_per_second.json, locks/
-- debug/            : log di debug da lex_package
+Replaces the Azure SDK implementation with a local-filesystem backend so the
+app can run on a plain server without any Azure credentials.
+
+The same public API is preserved so all callers (job_store, function_app,
+call_fast_api, extration_utils) continue to work unchanged.
+
+Storage root: LOCAL_STORAGE_PATH env var (default: /opt/sunnitai-be/storage).
+
+Layout mirrors the original blob container layout:
+    <root>/
+        <container>/
+            conf/jobs/<job_id>.json
+            conf/locks/<lock_name>
+            out/requirements/<file>
+            out/comparisons/<file>
+            debug/<file>
+            <pdf_name>.pdf
+            ...
 """
+import json
 import logging
 import os
+import shutil
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Iterable, Iterator
 
-from azure.identity import DefaultAzureCredential
-from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient
+_log = logging.getLogger(__name__)
 
-# Path prefixes
+# ── Configuration ─────────────────────────────────────────────────────────────
+
 PREFIX_OUT = "out"
 PREFIX_CONF = "conf"
+PREFIX_DEBUG = "debug"
 
 
-def _get_account_name() -> str:
-    return (
-        os.getenv("AZURE_STORAGE_ACCOUNT_NAME")
-        or os.getenv("AzureWebJobsStorage__accountName")
-        or "sacdpdev001"
-    )
+def _get_storage_root() -> Path:
+    return Path(os.getenv("LOCAL_STORAGE_PATH", "/opt/sunnitai-be/storage"))
 
 
 def _get_container_name() -> str:
-    return os.getenv("BLOB_CONTAINER_NAME") or "ai-audit-poc-sa"
+    return os.getenv("BLOB_CONTAINER_NAME", "sunnitai")
 
 
-def get_blob_service_client() -> BlobServiceClient:
-    """BlobServiceClient via DefaultAzureCredential (Managed Identity)."""
-    account = _get_account_name()
-    url = f"https://{account}.blob.core.windows.net"
-    return BlobServiceClient(account_url=url, credential=DefaultAzureCredential())
+# ── Minimal blob-SDK-compatible types ─────────────────────────────────────────
+
+@dataclass
+class _BlobItem:
+    """Mimics azure.storage.blob.BlobItem (only .name is used)."""
+    name: str
 
 
-def get_container_client() -> ContainerClient:
-    """Container client per il single container."""
-    return get_blob_service_client().get_container_client(_get_container_name())
+class _DownloadStream:
+    """Mimics the return value of BlobClient.download_blob()."""
+
+    def __init__(self, data: bytes):
+        self._data = data
+
+    def readall(self) -> bytes:
+        return self._data
 
 
-def get_blob_client(blob_path: str) -> BlobClient:
-    """BlobClient per path nel container (es: out/requirements/doc.json)."""
-    return get_container_client().get_blob_client(blob_path)
+class LocalBlobClient:
+    """Local-filesystem replacement for azure.storage.blob.BlobClient."""
+
+    def __init__(self, root: Path, container: str, blob_path: str):
+        self._file = root / container / blob_path
+
+    @property
+    def url(self) -> str:
+        return self._file.as_uri()
+
+    def exists(self) -> bool:
+        return self._file.exists()
+
+    def upload_blob(self, data, overwrite: bool = True) -> None:
+        if not overwrite and self._file.exists():
+            raise FileExistsError(f"Blob already exists: {self._file}")
+        self._file.parent.mkdir(parents=True, exist_ok=True)
+        if isinstance(data, (str, bytes)):
+            content = data.encode("utf-8") if isinstance(data, str) else data
+        else:
+            # File-like object
+            content = data.read()
+        self._file.write_bytes(content)
+        _log.debug("Uploaded blob: %s", self._file)
+
+    def download_blob(self) -> _DownloadStream:
+        if not self._file.exists():
+            # Raise compatible error (callers catch ResourceNotFoundError or Exception)
+            raise FileNotFoundError(f"Blob not found: {self._file}")
+        return _DownloadStream(self._file.read_bytes())
+
+    def delete_blob(self) -> None:
+        if self._file.exists():
+            self._file.unlink()
+            _log.debug("Deleted blob: %s", self._file)
 
 
-# --- Path helpers ---
+class LocalContainerClient:
+    """Local-filesystem replacement for azure.storage.blob.ContainerClient."""
+
+    def __init__(self, root: Path, container: str):
+        self._root = root
+        self._container = container
+        self._base = root / container
+
+    def get_blob_client(self, blob_path: str) -> LocalBlobClient:
+        return LocalBlobClient(self._root, self._container, blob_path)
+
+    def list_blobs(self, name_starts_with: str = None) -> Iterator[_BlobItem]:
+        if not self._base.exists():
+            return
+        for path in sorted(self._base.rglob("*")):
+            if path.is_file():
+                rel = path.relative_to(self._base).as_posix()
+                if name_starts_with is None or rel.startswith(name_starts_with):
+                    yield _BlobItem(name=rel)
+
+
+class LocalBlobServiceClient:
+    """Local-filesystem replacement for azure.storage.blob.BlobServiceClient."""
+
+    def __init__(self, root: Path):
+        self._root = root
+
+    def get_container_client(self, container: str) -> LocalContainerClient:
+        return LocalContainerClient(self._root, container)
+
+
+# ── Public helpers (same signatures as the Azure version) ─────────────────────
+
+def get_blob_service_client() -> LocalBlobServiceClient:
+    return LocalBlobServiceClient(_get_storage_root())
+
+
+def get_container_client() -> LocalContainerClient:
+    return LocalContainerClient(_get_storage_root(), _get_container_name())
+
+
+def get_blob_client(blob_path: str) -> LocalBlobClient:
+    return LocalBlobClient(_get_storage_root(), _get_container_name(), blob_path)
+
+
+def is_available() -> bool:
+    """Always True — local filesystem is always available."""
+    return True
+
+
+# ── Path helpers ──────────────────────────────────────────────────────────────
 
 def path_pdf(filename: str) -> str:
-    """PDF in root del container."""
     return filename
 
 
 def path_out_requirements(blob_name: str) -> str:
-    """Output estrazione: out/requirements/{blob_name}"""
     return f"{PREFIX_OUT}/requirements/{blob_name}"
 
 
 def path_out_comparisons(blob_path: str) -> str:
-    """Output comparazioni: out/comparisons/{blob_path}"""
     return f"{PREFIX_OUT}/comparisons/{blob_path}"
 
 
 def path_conf(blob_name: str) -> str:
-    """Config/stato: conf/{blob_name}"""
     return f"{PREFIX_CONF}/{blob_name}"
 
 
 def path_locks(blob_name: str) -> str:
-    """Lock distribuiti: conf/locks/{blob_name}"""
     return f"{PREFIX_CONF}/locks/{blob_name}"
 
 
 def path_job(job_id: str) -> str:
-    """Stato job condiviso (singolo servizio / mono-utenza): conf/jobs/{job_id}.json"""
     return f"{PREFIX_CONF}/jobs/{job_id}.json"
 
 
-# --- Retrocompatibilita' (alias per codice esistente) ---
+# ── Retro-compatibility aliases ────────────────────────────────────────────────
 
 def path_cdp(filename: str) -> str:
-    """Alias: PDF interni -> root."""
     return path_pdf(filename)
 
 
 def path_cdp_ext(filename: str) -> str:
-    """Alias retrocompatibilita': output/dati esterni -> out/{filename}."""
     return f"{PREFIX_OUT}/{filename}"
 
 
 def path_requirements(blob_name: str) -> str:
-    """Alias: requirements -> out/requirements/"""
     return path_out_requirements(blob_name)
 
 
 def path_comparisons(blob_path: str) -> str:
-    """Alias: comparisons -> out/comparisons/"""
     return path_out_comparisons(blob_path)
 
 
-def is_available() -> bool:
-    """True se storage e' configurato."""
-    return bool(_get_account_name() and _get_container_name())
-
-
-# --- Debug log upload ---
-
-PREFIX_DEBUG = "debug"
-
-_log = logging.getLogger(__name__)
-
+# ── Debug log upload ───────────────────────────────────────────────────────────
 
 def upload_debug_log(filename: str, content: str) -> bool:
-    """Carica un debug log su blob storage in debug/{filename}.
-    Ritorna True se upload riuscito, False altrimenti (non blocca il flusso).
-    """
     try:
         blob_path = f"{PREFIX_DEBUG}/{filename}"
-        get_blob_client(blob_path).upload_blob(
-            content.encode("utf-8"), overwrite=True
-        )
-        _log.info("Debug log uploaded: %s", blob_path)
+        get_blob_client(blob_path).upload_blob(content.encode("utf-8"), overwrite=True)
+        _log.info("Debug log saved: %s", blob_path)
         return True
     except Exception as exc:
-        _log.warning("Failed to upload debug log %s: %s", filename, exc)
+        _log.warning("Failed to save debug log %s: %s", filename, exc)
         return False

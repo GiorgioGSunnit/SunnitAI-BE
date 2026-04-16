@@ -7,7 +7,10 @@ import logging
 from threading import Lock
 from rich.console import Console
 from rich.table import Table
-from azure.core.exceptions import ResourceNotFoundError
+try:
+    from azure.core.exceptions import ResourceNotFoundError
+except ImportError:
+    ResourceNotFoundError = FileNotFoundError  # type: ignore
 
 # Usa blob_storage_client centralizzato (Managed Identity, no CONNECTION_STRING)
 _app_src = Path("/app/src")

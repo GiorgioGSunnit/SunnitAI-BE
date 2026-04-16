@@ -34,6 +34,8 @@ ipython_config.py
 
 # Environments
 .env
+.env.*
+.env.production
 .venv
 .venv_*/*
 .cache

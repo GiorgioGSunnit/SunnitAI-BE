@@ -4,16 +4,30 @@ import argparse
 import json
 import re
 from typing import Dict, List, Optional
-from azure.core.credentials import AzureKeyCredential
-from azure.search.documents import SearchClient
-from azure.search.documents.models import QueryType, QueryCaptionType, QueryAnswerType
+
+try:
+    from azure.core.credentials import AzureKeyCredential
+    from azure.search.documents import SearchClient
+    from azure.search.documents.models import QueryType, QueryCaptionType, QueryAnswerType
+    _SEARCH_AVAILABLE = True
+except ImportError:
+    _SEARCH_AVAILABLE = False
+    AzureKeyCredential = SearchClient = None  # type: ignore
+    QueryType = QueryCaptionType = QueryAnswerType = None  # type: ignore
 
 class EnhancedSearchService:
     def __init__(self, endpoint: str, index_name: str, api_key: str):
+        if not _SEARCH_AVAILABLE:
+            self.search_client = None
+            self.logger = logging.getLogger(__name__)
+            self.logger.warning(
+                "azure-search-documents not installed — search features disabled."
+            )
+            return
         self.search_client = SearchClient(
             endpoint=endpoint,
             index_name=index_name,
-            credential=AzureKeyCredential(api_key)
+            credential=AzureKeyCredential(api_key),
         )
         self.logger = logging.getLogger(__name__)
 

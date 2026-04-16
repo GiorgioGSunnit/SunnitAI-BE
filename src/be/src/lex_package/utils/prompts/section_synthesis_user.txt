@@ -1,0 +1,15 @@
+Produci una sintesi per la sezione indicata a partire dai riepiloghi delle sue parti.
+
+Documento: {document_name}
+Sezione: {section_title}
+Numero di parti: {parts_count}
+
+Riepiloghi delle parti:
+---
+{children_abstracts}
+---
+
+Estrai:
+- abstract: una sintesi in massimo 200 parole dell'intera sezione, che integra e unifica le informazioni delle parti
+- main_phrase: la frase più rappresentativa dell'intera sezione, selezionata o sintetizzata dai riepiloghi
+- meaning: il tipo di disposizione normativa prevalente nell'intera sezione

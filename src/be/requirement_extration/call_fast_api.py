@@ -20,8 +20,13 @@ from fastapi import FastAPI, Response, UploadFile, File, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 from requirement_extraction import RequirementExtractor
-from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient
-from azure.core.exceptions import ResourceExistsError, ResourceNotFoundError
+try:
+    from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient
+    from azure.core.exceptions import ResourceExistsError, ResourceNotFoundError
+except ImportError:
+    BlobServiceClient = BlobClient = ContainerClient = None  # type: ignore
+    ResourceExistsError = FileExistsError  # type: ignore
+    ResourceNotFoundError = FileNotFoundError  # type: ignore
 import logging
 from dotenv import load_dotenv
 import shutil
