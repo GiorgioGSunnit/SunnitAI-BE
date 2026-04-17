@@ -1,0 +1,84 @@
+{
+  "id": "gazzetta_ue",
+  "label": "Gazzetta Ufficiale dell'Unione Europea / EU Official Journal",
+  "priority": 3,
+  "threshold": 4,
+  "max_score": 9,
+  "user_aliases": [
+    "gazzetta ue",
+    "gazzetta ufficiale ue",
+    "gazzetta ufficiale unione europea",
+    "official journal",
+    "eu official journal",
+    "oj",
+    "gu ue",
+    "regolamento ue",
+    "direttiva ue",
+    "decisione ue"
+  ],
+  "structure": {
+    "has_index": false,
+    "header_lines": 2,
+    "footer_lines": 1,
+    "title_font_size_min": 12.0,
+    "body_font_name_hint": null,
+    "language": "it"
+  },
+  "scoring_rules": [
+    {
+      "feature": "regex_in_head",
+      "pattern": "Gazzetta\\s+ufficiale\\s+(?:dell[ae]?\\s+)?(?:Unione\\s+europea|Comunit[àa]\\s+europe[ea])",
+      "pages": 3,
+      "points": 3,
+      "description": "Gazzetta Ufficiale UE masthead"
+    },
+    {
+      "feature": "regex_in_head",
+      "pattern": "Official\\s+Journal",
+      "pages": 3,
+      "points": 3,
+      "description": "English Official Journal masthead"
+    },
+    {
+      "feature": "regex_in_head",
+      "pattern": "(?:REGOLAMENTO|DIRETTIVA|DECISIONE|REGULATION|DIRECTIVE|DECISION)\\s+(?:DELEGATO\\s+|DI\\s+ESECUZIONE\\s+|IMPLEMENTING\\s+|DELEGATED\\s+)?(?:\\((?:UE|CE|CEE|EU|EC)\\)\\s+)?(?:N\\.\\s*)?\\d+/\\d+",
+      "pages": 3,
+      "points": 2,
+      "description": "EU normative act type and number"
+    },
+    {
+      "feature": "regex_in_head",
+      "pattern": "\\bArticolo\\s+\\d+\\b|\\bArticle\\s+\\d+\\b",
+      "pages": 3,
+      "points": 1,
+      "description": "Article numbering"
+    },
+    {
+      "feature": "regex_in_head",
+      "pattern": "(?:CONSIGLIO|PARLAMENTO\\s+EUROPEO|COMMISSIONE|COUNCIL|PARLIAMENT|COMMISSION)",
+      "pages": 3,
+      "points": 1,
+      "description": "EU institution name"
+    },
+    {
+      "feature": "regex_in_head",
+      "pattern": "L\\s+\\d{1,4}\\s*/\\s*\\d{1,4}",
+      "pages": 3,
+      "points": 1,
+      "description": "EU L-series page reference"
+    },
+    {
+      "feature": "regex_in_head",
+      "pattern": "\\bconsiderando\\b",
+      "pages": 3,
+      "points": 1,
+      "description": "Recital / considerando keyword"
+    },
+    {
+      "feature": "filename_contains",
+      "values": ["gazzetta", "gu_", "oj_"],
+      "points": 3,
+      "description": "Gazzetta/OJ-related filename"
+    }
+  ]
+}

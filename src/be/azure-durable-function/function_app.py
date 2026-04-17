@@ -20,7 +20,7 @@ except ImportError:
 from datetime import datetime, timedelta
 import random
 import time
-import azure.functions as func
+import azure_func_compat as func  # replaces: import azure.functions as func
 import logging
 from concurrent.futures import ThreadPoolExecutor
 
@@ -31,7 +31,13 @@ from job_store import (
     set_failed,
     set_running,
 )
-from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient
+
+# azure.storage.blob is kept installed for legacy imports but actual storage
+# goes through blob_storage_client (local filesystem).
+try:
+    from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient
+except ImportError:
+    BlobServiceClient = BlobClient = ContainerClient = None  # type: ignore
 
 from utils import blob_storage_client as bsc
 from dotenv import load_dotenv
@@ -44,11 +50,13 @@ import base64
 import tiktoken
 from PyPDF2 import PdfReader
 from io import BytesIO
-from azure.core.exceptions import ResourceNotFoundError
+try:
+    from azure.core.exceptions import ResourceNotFoundError
+except ImportError:
+    ResourceNotFoundError = FileNotFoundError  # type: ignore
 import threading
 import tempfile
 import glob
-from azure.storage.blob._shared.base_client import create_configuration
 import urllib.parse
 import statistics
 import hashlib  

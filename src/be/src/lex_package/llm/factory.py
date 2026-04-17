@@ -1,105 +1,58 @@
+"""
+LLM factory — builds chat and embedding models from environment variables.
+
+Supports any OpenAI-compatible endpoint (RunPod, vLLM, Ollama, etc.) via:
+    LLM_BASE_URL   — e.g. http://server:8000/v1
+    LLM_API_KEY    — API key (can be "EMPTY" for local servers)
+    LLM_MODEL      — model name / deployment
+
+Primary and fallback targets read from separate env var sets:
+    Primary:  LLM_BASE_URL / LLM_API_KEY / LLM_MODEL
+    Fallback: LLM_BASE_URL_FALLBACK / LLM_API_KEY_FALLBACK / LLM_FALLBACK_MODEL
+
+For embeddings:
+    LLM_EMBEDDING_BASE_URL  — endpoint (defaults to LLM_BASE_URL)
+    LLM_EMBEDDING_API_KEY   — key (defaults to LLM_API_KEY)
+    LLM_EMBEDDING_MODEL     — embedding model name
+"""
 from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Optional, Tuple
 
-from langchain_openai import AzureChatOpenAI
-from langchain_openai import AzureOpenAIEmbeddings
-from langchain.chat_models import init_chat_model
-from azure.identity import ClientSecretCredential, get_bearer_token_provider
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
-from core.settings import get_settings
 
-# Factory per configurare i worker LLM da un unico posto.
-# Usa azure_ad_token_provider per autenticazione APIM con token v2.
+# ── Env-var lookup tables ─────────────────────────────────────────────────────
 
-_MODEL_ENV = {
+_MODEL_ENV: Dict[str, Tuple[str, ...]] = {
     "primary": ("LLM_MODEL", "AZURE_OPENAI_DEPLOYMENT_NAME"),
-    "fallback": ("LLM_FALLBACK_MODEL", "AZURE_OPENAI_DEPLOYMENT_NAME_BIS"),
+    "fallback": ("LLM_FALLBACK_MODEL", "LLM_MODEL", "AZURE_OPENAI_DEPLOYMENT_NAME_BIS"),
 }
 
-_PROVIDER_ENV = {
-    "primary": ("LLM_PROVIDER",),
-    "fallback": ("LLM_PROVIDER_FALLBACK", "LLM_PROVIDER"),
-}
-
-_AZURE_DEPLOYMENT_ENV = {
-    "primary": ("LLM_AZURE_DEPLOYMENT", "AZURE_OPENAI_DEPLOYMENT_NAME"),
-    "fallback": ("LLM_AZURE_DEPLOYMENT_FALLBACK", "AZURE_OPENAI_DEPLOYMENT_NAME_BIS"),
-}
-
-_API_VERSION_ENV = {
-    "primary": ("LLM_API_VERSION", "AZURE_OPENAI_API_VERSION"),
+_API_KEY_ENV: Dict[str, Tuple[str, ...]] = {
+    "primary": ("LLM_API_KEY", "OPENAI_API_KEY", "AZURE_OPENAI_API_KEY"),
     "fallback": (
-        "LLM_API_VERSION_FALLBACK",
-        "AZURE_OPENAI_API_VERSION_BIS",
-        "AZURE_OPENAI_API_VERSION",
+        "LLM_API_KEY_FALLBACK",
+        "LLM_API_KEY",
+        "OPENAI_API_KEY",
+        "AZURE_OPENAI_API_KEY",
     ),
 }
 
-_BASE_URL_ENV = {
-    "primary": ("LLM_BASE_URL",),
-    "fallback": ("LLM_BASE_URL_FALLBACK", "LLM_BASE_URL"),
+_BASE_URL_ENV: Dict[str, Tuple[str, ...]] = {
+    "primary": ("LLM_BASE_URL", "AZURE_OPENAI_ENDPOINT"),
+    "fallback": ("LLM_BASE_URL_FALLBACK", "LLM_BASE_URL", "AZURE_OPENAI_ENDPOINT"),
 }
 
-_DEFAULT_MODELS = {"primary": "gpt-4o-mini", "fallback": "gpt-4o-mini-bis"}
-
-# Scope per token v2 (App Registration ID)
-_DEFAULT_SCOPE = "c989d43a-9e62-4c01-a67c-7eefbeef70ce/.default"
-
-# Cache per token provider e credential (singleton)
-_token_provider = None
-_sp_credential = None
+_DEFAULT_MODELS: Dict[str, str] = {
+    "primary": "gpt-4o-mini",
+    "fallback": "gpt-4o-mini",
+}
 
 
-def _get_service_principal_credential():
-    """Restituisce ClientSecretCredential per il service principal Reader."""
-    global _sp_credential
-    if _sp_credential is None:
-        tenant_id = os.getenv("AZURE_TENANT_ID")
-        client_id = os.getenv("AZURE_READER__CLIENT_ID")
-        client_secret = os.getenv("AZURE_READER__CLIENT_SECRET")
-        if not all([tenant_id, client_id, client_secret]):
-            raise ValueError(
-                "Service principal credentials not found. "
-                "Ensure AZURE_TENANT_ID, AZURE_READER__CLIENT_ID, AZURE_READER__CLIENT_SECRET are set."
-            )
-        _sp_credential = ClientSecretCredential(tenant_id, client_id, client_secret)
-    return _sp_credential
-
-
-def _get_token_provider():
-    """Restituisce token provider per autenticazione APIM con token v2."""
-    global _token_provider
-    if _token_provider is None:
-        # Usa ClientSecretCredential (service principal) per ottenere token v2
-        cred = _get_service_principal_credential()
-        # Usa scope da settings se disponibile, altrimenti default
-        s = get_settings()
-        scope = s.azure_openai.scope if s.azure_openai else _DEFAULT_SCOPE
-        _token_provider = get_bearer_token_provider(cred, scope)
-    return _token_provider
-
-
-def _get_azure_config():
-    """Restituisce configurazione Azure OpenAI da settings o env vars."""
-    s = get_settings()
-    if s.azure_openai:
-        return {
-            "endpoint": s.azure_openai.endpoint,
-            "api_key": s.azure_openai.api_key,
-            "api_version": s.azure_openai.api_version,
-        }
-    # Fallback: usa env vars (settate da bootstrap)
-    return {
-        "endpoint": os.getenv("AZURE_OPENAI_ENDPOINT"),
-        "api_key": os.getenv("AZURE_OPENAI_API_KEY"),
-        "api_version": os.getenv("AZURE_OPENAI_API_VERSION", "2024-08-01-preview"),
-    }
-
-
-def _env(keys: Tuple[str, ...], default: str | None = None) -> str | None:
+def _env(*keys: str, default: Optional[str] = None) -> Optional[str]:
     for key in keys:
         value = os.getenv(key)
         if value:
@@ -109,27 +62,22 @@ def _env(keys: Tuple[str, ...], default: str | None = None) -> str | None:
 
 @dataclass(frozen=True)
 class ProviderConfig:
-    provider: str
     model_name: str
-    azure_deployment: str | None
-    api_version: str | None
-    base_url: str | None
+    api_key: str
+    base_url: Optional[str]
 
 
 def _resolve_config(target: str) -> ProviderConfig:
     if target not in _MODEL_ENV:
-        raise ValueError(f"Unsupported LLM target '{target}'")
+        raise ValueError(f"Unsupported LLM target '{target}'. Use 'primary' or 'fallback'.")
 
-    provider = _env(_PROVIDER_ENV[target], "azure_openai")
-    model_name = _env(_MODEL_ENV[target], _DEFAULT_MODELS[target])
-    azure_deployment = _env(_AZURE_DEPLOYMENT_ENV[target], model_name)
-    api_version = _env(_API_VERSION_ENV[target])
-    base_url = _env(_BASE_URL_ENV[target])
+    model_name = _env(*_MODEL_ENV[target], default=_DEFAULT_MODELS[target])
+    api_key = _env(*_API_KEY_ENV[target], default="EMPTY")  # "EMPTY" works with local servers
+    base_url = _env(*_BASE_URL_ENV[target])
+
     return ProviderConfig(
-        provider=provider or "azure_openai",
         model_name=model_name,
-        azure_deployment=azure_deployment,
-        api_version=api_version,
+        api_key=api_key,
         base_url=base_url,
     )
 
@@ -139,109 +87,75 @@ def build_chat_model(
     target: str = "primary",
     temperature: float = 0.0,
     overrides: Dict[str, Any] | None = None,
-):
-    """Return a chat model configured from environment variables.
+) -> ChatOpenAI:
+    """Return a ChatOpenAI model configured from environment variables.
 
     Args:
-        target: Either ``"primary"`` or ``"fallback"``. Determines which set of
-            environment variables are read.
-        temperature: Temperature passed to the model.
-        overrides: Optional explicit overrides for provider-specific kwargs.
+        target: ``"primary"`` or ``"fallback"``.
+        temperature: Model temperature.
+        overrides: Optional explicit overrides (model_name, api_key, base_url).
     """
     overrides = overrides or {}
     cfg = _resolve_config(target)
-    provider = overrides.get("provider", cfg.provider)
 
-    if provider == "azure_openai":
-        # Usa AzureChatOpenAI con token provider per APIM
-        azure_deployment = overrides.get("azure_deployment", cfg.azure_deployment or cfg.model_name)
-        if not azure_deployment:
-            raise ValueError(
-                "Azure deployment name is required when using provider 'azure_openai'"
-            )
-        az_cfg = _get_azure_config()
-        api_version = overrides.get("api_version", cfg.api_version) or az_cfg["api_version"]
-        
-        return AzureChatOpenAI(
-            azure_deployment=azure_deployment,
-            api_version=api_version,
-            azure_endpoint=az_cfg["endpoint"],
-            azure_ad_token_provider=_get_token_provider(),
-            default_headers={
-                "api-key": az_cfg["api_key"],
-                "Ocp-Apim-Subscription-Key": az_cfg["api_key"],
-            },
-            temperature=temperature,
-        )
-    else:
-        # Fallback per altri provider (OpenAI, etc.)
-        model_name = overrides.get("model_name", cfg.model_name)
-        kwargs: Dict[str, Any] = {
-            "model_provider": provider,
-            "temperature": temperature,
-        }
-        base_url = overrides.get("base_url", cfg.base_url)
-        if base_url:
-            kwargs["base_url"] = base_url
-        return init_chat_model(model_name, **kwargs)
+    model_name = overrides.get("model_name", cfg.model_name)
+    api_key = overrides.get("api_key", cfg.api_key)
+    base_url = overrides.get("base_url", cfg.base_url)
+
+    kwargs: Dict[str, Any] = {
+        "model": model_name,
+        "api_key": api_key,
+        "temperature": temperature,
+    }
+    if base_url:
+        kwargs["base_url"] = base_url
+
+    return ChatOpenAI(**kwargs)
 
 
 def build_embedding_model(
     *,
     target: str = "primary",
     overrides: Dict[str, Any] | None = None,
-):
-    """Return an embeddings model configured from settings/env vars.
+) -> OpenAIEmbeddings:
+    """Return an OpenAIEmbeddings model configured from environment variables.
 
-    Notes:
-    - Uses the same Azure endpoint, API version and APIM token provider as chat.
-    - Deployment name is resolved from Settings.azure_openai.embedding_model_deployment
-      when available, otherwise falls back to env vars.
+    Embedding-specific env vars take priority; falls back to LLM vars:
+        LLM_EMBEDDING_BASE_URL  → LLM_BASE_URL
+        LLM_EMBEDDING_API_KEY   → LLM_API_KEY
+        LLM_EMBEDDING_MODEL     (required — do NOT fall back to chat model name)
     """
     overrides = overrides or {}
-    cfg = _resolve_config(target)
-    provider = overrides.get("provider", cfg.provider)
-    if provider != "azure_openai":
-        raise ValueError("Only 'azure_openai' provider is supported for embeddings")
 
-    s = get_settings()
-    embedding_deployment = None
-    if getattr(s, "azure_openai", None):
-        embedding_deployment = getattr(s.azure_openai, "embedding_model_deployment", None)
-
-    # Env fallbacks (keep names explicit to avoid accidental chat deployment reuse)
-    embedding_deployment = (
-        overrides.get("azure_deployment")
-        or embedding_deployment
-        or os.getenv("AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT_NAME")
-        or os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME")
-        or os.getenv("LLM_AZURE_EMBEDDINGS_DEPLOYMENT")
+    embedding_model = (
+        overrides.get("model")
+        or _env("LLM_EMBEDDING_MODEL", "AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT_NAME")
     )
-    if not embedding_deployment:
-        # Do NOT fall back to chat deployment: many chat models do not support embeddings.
+    if not embedding_model:
         raise ValueError(
-            "Azure embeddings deployment name is required. "
-            "Set Settings.azure_openai.embedding_model_deployment (KeyVault/env) or "
-            "AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT_NAME."
+            "Embedding model name is required. Set LLM_EMBEDDING_MODEL in .env."
         )
 
-    # Guardrail: avoid using a chat model deployment for embeddings.
-    if str(embedding_deployment).lower().startswith("gpt-"):
-        raise ValueError(
-            "Embeddings deployment appears to be a chat model. "
-            "Set AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT_NAME to a text-embedding deployment."
+    api_key = (
+        overrides.get("api_key")
+        or _env(
+            "LLM_EMBEDDING_API_KEY",
+            "LLM_API_KEY",
+            "OPENAI_API_KEY",
+            "AZURE_OPENAI_API_KEY",
+            default="EMPTY",
         )
-
-    az_cfg = _get_azure_config()
-    api_version = overrides.get("api_version", cfg.api_version) or az_cfg["api_version"]
-
-    return AzureOpenAIEmbeddings(
-        azure_deployment=embedding_deployment,
-        api_version=api_version,
-        azure_endpoint=az_cfg["endpoint"],
-        azure_ad_token_provider=_get_token_provider(),
-        default_headers={
-            "api-key": az_cfg["api_key"],
-            "Ocp-Apim-Subscription-Key": az_cfg["api_key"],
-        },
     )
+
+    base_url = overrides.get("base_url") or _env(
+        "LLM_EMBEDDING_BASE_URL", "LLM_BASE_URL", "AZURE_OPENAI_ENDPOINT"
+    )
+
+    kwargs: Dict[str, Any] = {
+        "model": embedding_model,
+        "api_key": api_key,
+    }
+    if base_url:
+        kwargs["base_url"] = base_url
+
+    return OpenAIEmbeddings(**kwargs)

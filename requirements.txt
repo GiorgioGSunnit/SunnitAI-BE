@@ -5,17 +5,10 @@ annotated-types==0.7.0
 anyio==4.8.0
 asgiref==3.8.1
 attrs==24.3.0
-azure-ai-documentintelligence==1.0.0
-azure-ai-formrecognizer==3.3.3
-azure-common==1.1.28
+# azure-core kept for azure.core.exceptions (ResourceNotFoundError) used in extration_utils
 azure-core==1.32.0
-azure-core-tracing-opentelemetry==1.0.0b11
-azure-cosmos==4.9.0
-azure-identity==1.21.0
-azure-keyvault-secrets==4.9.0
-azure-monitor-opentelemetry==1.6.5
-azure-monitor-opentelemetry-exporter==1.0.0b34
-azure-search-documents==11.5.2
+# azure-storage-blob kept for legacy direct imports in function_app / call_fast_api
+# Actual storage now uses local filesystem (blob_storage_client.py)
 azure-storage-blob==12.24.1
 certifi==2024.12.14
 cffi==1.17.1
@@ -49,21 +42,14 @@ langchain-text-splitters==0.3.6
 langgraph==0.2.65
 langgraph-checkpoint==2.0.10
 langgraph-sdk==0.1.51
-langgraph_checkpoint_cosmosdb==0.2.3
 langsmith==0.2.11
 marshmallow==3.25.1
-msal==1.31.1
-msal-extensions==1.2.0
 msgpack==1.1.0
-msrest==0.7.1
 multidict==6.1.0
 mypy-extensions==1.0.0
 numpy==1.26.4
 oauthlib==3.2.2
 openai==1.59.9
-# opentelemetry - let azure-monitor-opentelemetry manage versions
-opentelemetry-api>=1.30.0
-opentelemetry-sdk>=1.30.0
 orjson==3.10.15
 packaging==24.2
 portalocker==2.10.1
@@ -99,7 +85,4 @@ yarl==1.18.3
 zipp==3.21.0
 loguru==0.7.2
 spacy==3.7.5
-# torch==2.5.1  # Removed - using lex_package
-# transformers==4.46.1  # Removed - not used
-# sentence-transformers==3.3.1  # Removed - using lex_package
 rich==13.7.0

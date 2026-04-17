@@ -1,0 +1,15 @@
+Analizza il seguente testo normativo ed estrai le informazioni richieste.
+
+Documento: {document_name}
+Sezione: {section_title}
+Pagina: {page}
+Posizione nel documento: {hierarchy}
+
+---
+{content}
+---
+
+Estrai:
+- abstract: una descrizione in massimo 200 parole che cattura il significato, le disposizioni principali, i soggetti coinvolti e gli obblighi o condizioni stabiliti nel testo
+- main_phrase: la frase più significativa del testo, riportata letteralmente e per intero
+- meaning: il tipo di disposizione normativa prevalente
