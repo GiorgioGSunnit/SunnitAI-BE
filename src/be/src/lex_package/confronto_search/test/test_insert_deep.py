@@ -5,15 +5,10 @@ Questo modulo contiene test per verificare che la funzione insert_deep
 funzioni correttamente come operazione inversa di index_contents.
 """
 
-import sys
-import os
 import json
 from typing import Dict, List, Any
 
-# Aggiungi il path del modulo parent
-sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
-
-from utils import (
+from ..utils import (
     index_contents,
     insert_deep,
     insert_deep_with_path,
