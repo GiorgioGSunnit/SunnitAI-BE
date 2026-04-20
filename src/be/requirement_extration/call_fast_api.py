@@ -2901,6 +2901,8 @@ async def extract_requirements(file: UploadFile = File(...)):
                 flattened_records=flattened_data,
                 document_name=normalized_filename,
                 document_hash=file_hash,
+                file_name=normalized_filename,
+                pdf_path=str(temp_file_path),
             )
 
             # Save Excel file

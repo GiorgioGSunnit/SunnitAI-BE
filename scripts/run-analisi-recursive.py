@@ -92,7 +92,13 @@ def main() -> int:
 
         # Graph payload from flattened (use doc hash derived from document name)
         doc_hash = stable_hash(name)
-        graph = build_neo4j_graph_payload(flattened, document_name=name, document_hash=doc_hash)
+        graph = build_neo4j_graph_payload(
+            flattened,
+            document_name=name,
+            document_hash=doc_hash,
+            file_name=name,
+            pdf_path=str(pdf),
+        )
         graph_path = out_flat_dir / f"{stem}_graph.json"
         graph_path.write_text(json.dumps(graph, ensure_ascii=False, indent=2), encoding="utf-8")
 

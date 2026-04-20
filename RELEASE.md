@@ -1,6 +1,6 @@
 # SunnitAI-BE — Release Guide
 
-Deploys the backend to the production server (`204.168.183.198`) as a Docker container.  
+Deploys the backend to the production server (`204.168.183.198`) as two systemd services running inside a Python virtualenv. No Docker required.  
 The whole process is driven by a single command from your Mac — no manual SSH steps required.
 
 ---
@@ -74,12 +74,13 @@ The first Docker build takes **5–10 minutes** — it downloads the spaCy Itali
 
 `deploy.sh` runs **on the server** and is not meant to be called directly.
 
-1. Checks Docker is installed and the daemon is running
-2. Tags the current image as `sunnitai-be:previous` (enables one-command rollback)
-3. Builds `sunnitai-be:latest` from the uploaded source
-4. Stops and removes the old container (15-second graceful shutdown)
-5. Starts the new container with `--restart unless-stopped`
-6. Waits 15 seconds, then verifies the container is still running and prints the last 20 log lines
+1. Checks Python 3.11 is installed (installs via deadsnakes PPA if not) and that system libs are present
+2. Copies the current source to `/opt/sunnitai-be-previous` (enables one-command rollback)
+3. Creates/updates a virtualenv at `/opt/sunnitai-be/venv` and runs `pip install` for both requirement files
+4. Downloads the spaCy `it_core_news_lg` model (~600 MB) if not already present — only on first deploy
+5. Writes systemd unit files for both services to `/etc/systemd/system/`
+6. Reloads systemd and restarts both services
+7. Waits 6 seconds, checks `systemctl is-active` for each service, and prints journal logs if either failed
 
 A timestamped log of every deploy is appended to `/var/log/sunnitai-be-deploy.log` on the server.
 
@@ -101,13 +102,14 @@ All commands run from your Mac via SSH:
 
 ```bash
 # Stream live logs
-ssh -i ~/.ssh/server_key root@204.168.183.198 'docker logs sunnitai-be -f'
+ssh -i ~/.ssh/server_key root@204.168.183.198 'journalctl -u sunnitai-functions -f'
+ssh -i ~/.ssh/server_key root@204.168.183.198 'journalctl -u sunnitai-vmai -f'
 
-# Check container status
-ssh -i ~/.ssh/server_key root@204.168.183.198 'docker ps'
+# Check service status
+ssh -i ~/.ssh/server_key root@204.168.183.198 'systemctl status sunnitai-functions sunnitai-vmai'
 
-# Open a shell inside the container
-ssh -i ~/.ssh/server_key root@204.168.183.198 'docker exec -it sunnitai-be bash'
+# Restart a service
+ssh -i ~/.ssh/server_key root@204.168.183.198 'systemctl restart sunnitai-functions'
 
 # View the deploy log
 ssh -i ~/.ssh/server_key root@204.168.183.198 'tail -100 /var/log/sunnitai-be-deploy.log'
@@ -117,19 +119,18 @@ ssh -i ~/.ssh/server_key root@204.168.183.198 'tail -100 /var/log/sunnitai-be-de
 
 ## Rollback
 
-If a deploy breaks the service, revert to the previous image in one command:
+If a deploy breaks the service, revert to the previous source in one command:
 
 ```bash
 ssh -i ~/.ssh/server_key root@204.168.183.198 '
-  docker stop sunnitai-be && docker rm sunnitai-be
-  docker run --detach --name sunnitai-be --restart unless-stopped \
-    --env-file /opt/sunnitai-be/.env \
-    -p 7071:7071 -p 2025:2025 \
-    sunnitai-be:previous
+  systemctl stop sunnitai-functions sunnitai-vmai
+  rm -rf /opt/sunnitai-be/src
+  cp -r /opt/sunnitai-be-previous /opt/sunnitai-be/src
+  systemctl start sunnitai-functions sunnitai-vmai
 '
 ```
 
-> The `previous` tag is created automatically at the start of each deploy. It points to whatever was running before.
+> The previous source is backed up automatically to `/opt/sunnitai-be-previous` at the start of each deploy.
 
 ---
 
@@ -146,8 +147,11 @@ The service may still be initialising. Check logs:
 ssh -i ~/.ssh/server_key root@204.168.183.198 'docker logs sunnitai-be --tail 50'
 ```
 
-**Container exits immediately**  
-The pre-flight check in the entrypoint will print exactly which env var is missing or misconfigured. Look for `❌ [preflight]` lines in the logs.
+**Service fails to start**  
+The pre-flight check in the systemd `ExecStartPre` step will print exactly which env var is missing or misconfigured:
+```bash
+journalctl -u sunnitai-functions -n 50 --no-pager
+```
 
 **Deploy to a different server**  
 Override the target without editing the script:

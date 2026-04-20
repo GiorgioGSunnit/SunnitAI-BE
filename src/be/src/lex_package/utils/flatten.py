@@ -186,7 +186,12 @@ def _vector_from_flat_record(r: dict) -> list[float]:
 
 
 def build_neo4j_graph_payload(
-    flattened_records: list[dict], document_name: str, document_hash: str
+    flattened_records: list[dict],
+    document_name: str,
+    document_hash: str,
+    *,
+    file_name: str | None = None,
+    pdf_path: str | None = None,
 ) -> dict:
     """
     Build a Neo4j-ready JSON payload from flattened analysis records.
@@ -197,6 +202,11 @@ def build_neo4j_graph_payload(
     (formato ``Pg. <n>``). Se il vettore è assente ma gli embedding sono abilitati,
     si tenta ``embed_text`` sul ``plain_text`` della sezione.
 
+    Metadati documento (opzionale): se ``pdf_path`` è fornito, viene effettuata una
+    chiamata LLM per estrarre ``document_name`` ufficiale, ``file_name``,
+    ``editor_enterprises`` e altri campi. I risultati vengono aggiunti al nodo
+    LEGAL_DOC e come nodi EDITOR con relazioni AUTHORED_BY.
+
     Arricchimento (opzionale, vedi ``lex_package.utils.graph_enrichment``): nodi
     LEGAL_CONCEPT, LEGAL_ACTION, DATE, ORGANIZATION, PERSON, ROLE, LOCATION e relazioni
     collegate.
@@ -206,6 +216,13 @@ def build_neo4j_graph_payload(
       "nodes": [{ "id": "...", "labels": [...], "properties": {...} }],
       "relationships": [{ "type": "...", "source": "...", "target": "...", "properties": {...}? }]
     }
+
+    Args:
+        flattened_records: Record appiattiti dall'analisi.
+        document_name: Nome normalizzato del documento (usato come fallback per il titolo).
+        document_hash: Hash SHA del documento.
+        file_name: Nome del file originale sul filesystem (può differire dal titolo ufficiale).
+        pdf_path: Percorso al PDF su disco; se fornito abilita l'estrazione LLM dei metadati.
     """
     records = flattened_records or []
     doc_node_id = f"LEGAL_DOC::{document_hash}"
@@ -223,6 +240,27 @@ def build_neo4j_graph_payload(
         seen_node_ids.add(node_id)
         nodes.append({"id": node_id, "labels": labels, "properties": properties})
 
+    # ── Metadata extraction (LLM, optional) ──────────────────────────────────
+    extracted_metadata = None
+    if pdf_path:
+        try:
+            from lex_package.utils.metadata_extraction import extract_document_metadata
+
+            extracted_metadata = extract_document_metadata(
+                pdf_path=pdf_path,
+                file_name=file_name or document_name,
+                document_name=document_name,
+            )
+        except Exception as _meta_exc:
+            logger.warning("Metadata extraction skipped: %s", _meta_exc)
+
+    # Resolve display name: prefer LLM-extracted title, fall back to document_name
+    official_document_name = (
+        extracted_metadata.document_name
+        if extracted_metadata and extracted_metadata.document_name
+        else document_name
+    )
+
     doc_date = _extract_first_date(document_name)
     source_name, source_desc = _infer_legal_source(document_name)
 
@@ -231,13 +269,37 @@ def build_neo4j_graph_payload(
         ["LEGAL_DOC"],
         {
             "id": doc_node_id,
-            "name": document_name,
+            "name": official_document_name,
+            "file_name": file_name or document_name,
             "description": "",
-            "date_enacted": doc_date,
+            "date_enacted": extracted_metadata.issue_date or doc_date if extracted_metadata else doc_date,
+            "document_number": extracted_metadata.document_number if extracted_metadata else None,
             "status": "",
             "hash": document_hash,
         },
     )
+
+    # ── EDITOR nodes + AUTHORED_BY relationships ──────────────────────────────
+    if extracted_metadata and extracted_metadata.editor_enterprises:
+        for enterprise in extracted_metadata.editor_enterprises:
+            editor_id = f"EDITOR::{stable_hash(enterprise.name)[:20]}"
+            add_node(
+                editor_id,
+                ["EDITOR", "ORGANIZATION"],
+                {
+                    "id": editor_id,
+                    "name": enterprise.name,
+                    "role": enterprise.role,
+                },
+            )
+            relationships.append(
+                {
+                    "type": "AUTHORED_BY",
+                    "source": doc_node_id,
+                    "target": editor_id,
+                    "properties": {"role": enterprise.role},
+                }
+            )
 
     source_id = f"LEGAL_SOURCE::{stable_hash(source_name)[:16]}"
     add_node(
@@ -348,8 +410,20 @@ def build_neo4j_graph_payload(
         "relationships": relationships,
         "meta": {
             "generated_at_utc": datetime.now(timezone.utc).isoformat(),
-            "document_name": document_name,
+            "document_name": official_document_name,
+            "file_name": file_name or document_name,
             "document_hash": document_hash,
+            "metadata_extraction_llm": extracted_metadata is not None,
+            "document_number": extracted_metadata.document_number if extracted_metadata else None,
+            "issue_date": extracted_metadata.issue_date if extracted_metadata else None,
+            "editor_enterprises": (
+                [
+                    {"name": e.name, "role": e.role}
+                    for e in extracted_metadata.editor_enterprises
+                ]
+                if extracted_metadata
+                else []
+            ),
             "flatten_vector_fields": ["Vettore", "Embedding Raw"],
             "document_section_text_fields": {
                 "Articolo": ["Contenuto Articolo", "Contenuto"],
