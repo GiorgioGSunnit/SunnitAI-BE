@@ -1,0 +1,805 @@
+openapi: 3.0.3
+info:
+  title: SunnitAI API
+  description: |
+    Legal-tech document parsing and AI analysis backend.
+
+    ## Async Job Flow
+    Several endpoints process documents asynchronously. They return `202 Accepted`
+    with a `job_id`. Poll `GET /api/job/{job_id}` until `runtimeStatus` is
+    `"Completed"` or `"Failed"`.
+
+    ## Base URL
+    `http://<host>:7071`
+  version: "1.0.0"
+
+servers:
+  - url: http://localhost:7071
+    description: Local dev
+  - url: http://204.168.183.198:7071
+    description: Production server
+
+tags:
+  - name: System
+    description: Health and authentication
+  - name: Jobs
+    description: Async job status polling
+  - name: Documents
+    description: Upload, list, and delete documents
+  - name: Analysis
+    description: Extract requirements, sanctions, subjects
+  - name: Comparison
+    description: Compare two documents
+  - name: Downloads
+    description: Download result files (Excel, HTML)
+  - name: Search
+    description: Full-text search
+  - name: Translate
+    description: Document translation
+  - name: Mock (test mode only)
+    description: Endpoints backed by mock JSON — only active when MODE=test
+
+paths:
+
+  # ─── System ────────────────────────────────────────────────────────────────
+
+  /api/health:
+    get:
+      tags: [System]
+      summary: Health check
+      responses:
+        "200":
+          description: Service is up
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  service:
+                    type: string
+                    example: functions-api
+
+  /api/login:
+    post:
+      tags: [System]
+      summary: Authenticate user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username:
+                  type: string
+                  example: username
+                password:
+                  type: string
+                  example: password2
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginSuccess"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginFail"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  # ─── Jobs ──────────────────────────────────────────────────────────────────
+
+  /api/job/{job_id}:
+    get:
+      tags: [Jobs]
+      summary: Poll async job status
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Job ID returned by an async endpoint
+      responses:
+        "200":
+          description: Job status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobStatus"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          description: Job not found
+
+  # ─── Documents ─────────────────────────────────────────────────────────────
+
+  /api/upload:
+    post:
+      tags: [Documents]
+      summary: Upload a document for processing
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, external]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: PDF document
+                external:
+                  type: string
+                  enum: ["0", "1", "true", "false", "True", "False"]
+                  description: Whether the document is external
+      responses:
+        "202":
+          description: Job accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AsyncJobResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/get-document-list:
+    get:
+      tags: [Documents]
+      summary: List all uploaded documents with metadata
+      responses:
+        "200":
+          description: Array of documents
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DocumentMeta"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/getDocuments/{name}:
+    get:
+      tags: [Documents]
+      summary: Get a specific document by name
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Document name
+      responses:
+        "200":
+          description: Document data
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "504":
+          description: Upstream timeout
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/delete-files:
+    delete:
+      tags: [Documents]
+      summary: Delete one or more files
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: File deletion request (proxied to backend VM)
+      responses:
+        "200":
+          description: Files deleted
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  # ─── Analysis ──────────────────────────────────────────────────────────────
+
+  /api/extract_requirements:
+    post:
+      tags: [Analysis]
+      summary: Extract requirements from a PDF (async)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, external]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: PDF document
+                external:
+                  type: string
+                  enum: ["0", "1", "true", "false", "True", "False"]
+      responses:
+        "202":
+          description: Job accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AsyncJobResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/extract_subjects:
+    post:
+      tags: [Analysis]
+      summary: Extract named entities / subjects from a PDF (async)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: PDF document
+      responses:
+        "202":
+          description: Job accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AsyncJobResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/extract_sanctions:
+    post:
+      tags: [Analysis]
+      summary: Extract sanctions from a PDF (async)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, external]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: PDF document
+                external:
+                  type: string
+                  enum: ["0", "1", "true", "false", "True", "False"]
+      responses:
+        "202":
+          description: Job accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AsyncJobResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/get-results:
+    get:
+      tags: [Analysis]
+      summary: Retrieve analysis or comparison results
+      parameters:
+        - name: type
+          in: query
+          required: true
+          schema:
+            type: string
+            enum:
+              - requirement
+              - subject
+              - sanction
+              - comparison
+              - versioning
+              - emendativa
+              - attuativa
+              - implementation
+              - amendment
+          description: Type of result to retrieve
+        - name: name
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Document name (required for non-comparison types)
+        - name: fileName1
+          in: query
+          required: false
+          schema:
+            type: string
+          description: First file name (required for comparison types)
+        - name: fileName2
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Second file name (required for comparison types)
+        - name: comparisonMode
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ["true", "false"]
+      responses:
+        "200":
+          description: Result data
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "504":
+          description: Upstream timeout
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  # ─── Comparison ────────────────────────────────────────────────────────────
+
+  /api/compare_requirements:
+    post:
+      tags: [Comparison]
+      summary: Compare requirements between two documents (async)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file1:
+                  type: string
+                  format: binary
+                  description: First PDF (optional if file1Name provided)
+                file2:
+                  type: string
+                  format: binary
+                  description: Second PDF (optional if file2Name provided)
+                file1Name:
+                  type: string
+                  description: Name of first file already in storage
+                file2Name:
+                  type: string
+                  description: Name of second file already in storage
+                file1IsExternal:
+                  type: string
+                  enum: ["0", "1", "true", "false"]
+                file2IsExternal:
+                  type: string
+                  enum: ["0", "1", "true", "false"]
+                comparisonMode:
+                  type: string
+                  description: Comparison type
+          application/json:
+            schema:
+              type: object
+              required: [file1Name, file2Name]
+              properties:
+                file1Name:
+                  type: string
+                file2Name:
+                  type: string
+                file1IsExternal:
+                  type: boolean
+                file2IsExternal:
+                  type: boolean
+                comparisonMode:
+                  type: string
+      responses:
+        "202":
+          description: Job accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AsyncJobResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/sendCompare:
+    post:
+      tags: [Comparison]
+      summary: Trigger a document comparison on the VMAI backend
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, compareToName]
+              properties:
+                name:
+                  type: string
+                  description: First document name
+                compareToName:
+                  type: string
+                  description: Second document name
+      responses:
+        "200":
+          description: Comparison triggered
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/getCompare/{name}/{compareToName}:
+    get:
+      tags: [Comparison]
+      summary: Get comparison results for two documents
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: compareToName
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Comparison data
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  # ─── Downloads ─────────────────────────────────────────────────────────────
+
+  /api/download-excel:
+    get:
+      tags: [Downloads]
+      summary: Download analysis or comparison result as Excel
+      parameters:
+        - name: fileName
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Name of the document/file
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [analysis, comparison]
+            default: analysis
+      responses:
+        "200":
+          description: Excel file
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/download-requirements-result:
+    get:
+      tags: [Downloads]
+      summary: Download requirements result Excel (analisi_preliminare_requisiti.xlsx)
+      responses:
+        "200":
+          description: Excel file
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/download-requirements-excel:
+    get:
+      tags: [Downloads]
+      summary: Download requirements Excel for a specific document
+      parameters:
+        - name: filename
+          in: query
+          required: true
+          schema:
+            type: string
+          description: PDF file name or base name
+      responses:
+        "200":
+          description: Excel file
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/download-comparison-result:
+    get:
+      tags: [Downloads]
+      summary: Download comparison result as HTML (risultati_confronto.html)
+      responses:
+        "200":
+          description: HTML file
+          content:
+            text/html:
+              schema:
+                type: string
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/download-comparison-excel:
+    get:
+      tags: [Downloads]
+      summary: Download comparison result as Excel
+      parameters:
+        - name: fileName1
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: fileName2
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: comparisonMode
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [versioning, attuativa, emendativa]
+            default: versioning
+      responses:
+        "200":
+          description: Excel file
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  # ─── Search ────────────────────────────────────────────────────────────────
+
+  /api/search:
+    post:
+      tags: [Search]
+      summary: Full-text search across documents
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Search query (proxied to VMAI search service)
+      responses:
+        "200":
+          description: Search results
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  # ─── Translate ─────────────────────────────────────────────────────────────
+
+  /api/translate:
+    post:
+      tags: [Translate]
+      summary: Translate a PDF document (async)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: PDF document to translate
+      responses:
+        "202":
+          description: Job accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AsyncJobResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  # ─── Mock / test mode only ─────────────────────────────────────────────────
+
+  /api/getAllScopes:
+    get:
+      tags: [Mock (test mode only)]
+      summary: Get all scopes (mock data)
+      responses:
+        "200":
+          description: Scopes list
+          content:
+            application/json:
+              schema:
+                type: object
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/getAllTopics:
+    get:
+      tags: [Mock (test mode only)]
+      summary: Get all topics (mock data)
+      responses:
+        "200":
+          description: Topics list
+          content:
+            application/json:
+              schema:
+                type: object
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/getLastDocInfo:
+    get:
+      tags: [Mock (test mode only)]
+      summary: Get last document info (mock data)
+      responses:
+        "200":
+          description: Document info
+          content:
+            application/json:
+              schema:
+                type: object
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /api/getAllStatistics:
+    get:
+      tags: [Mock (test mode only)]
+      summary: Get all statistics (mock data)
+      responses:
+        "200":
+          description: Statistics object
+          content:
+            application/json:
+              schema:
+                type: object
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+# ─── Shared components ───────────────────────────────────────────────────────
+
+components:
+  schemas:
+
+    AsyncJobResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Job ID — use with GET /api/job/{job_id}
+          example: "3f2e1a4b-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+        statusQueryGetUri:
+          type: string
+          example: "/api/job/3f2e1a4b-5c6d-7e8f-9a0b-1c2d3e4f5a6b"
+        status:
+          type: string
+          example: running
+
+    JobStatus:
+      type: object
+      properties:
+        id:
+          type: string
+        runtimeStatus:
+          type: string
+          enum: [Pending, Running, Completed, Failed]
+          example: Completed
+        output:
+          description: Result payload when Completed, error message when Failed
+          nullable: true
+
+    DocumentMeta:
+      type: object
+      properties:
+        name:
+          type: string
+        uploadedAt:
+          type: string
+          format: date-time
+        size:
+          type: integer
+
+    LoginSuccess:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Login successful
+        status:
+          type: string
+          example: success
+
+    LoginFail:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Invalid username or password
+        status:
+          type: string
+          example: fail
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          example: Missing required parameter
+
+  responses:
+    BadRequest:
+      description: Bad request — missing or invalid parameters
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    ServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
