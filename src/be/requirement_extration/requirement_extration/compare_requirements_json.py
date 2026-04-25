@@ -11,10 +11,9 @@ from typing import List, Tuple, Dict
 
 import fitz
 import numpy as np
-import tiktoken
 from rich.logging import RichHandler
 # from sentence_transformers import SentenceTransformer  # Removed - using lex_package
-from openai import AzureOpenAI
+from openai import OpenAI
 
 from call_fast_api import upload_to_blob
 
@@ -45,8 +44,8 @@ except Exception as e:
     sys.exit(1)
 
 # Parametri globali per il modello LLM
-setup_model = "gpt-4"
-setup_model_gpt4o = "gpt-4.1"
+setup_model = os.getenv("LLM_MODEL", "nemotron-2-30B-A3B")
+setup_model_gpt4o = os.getenv("LLM_MODEL", "nemotron-2-30B-A3B")
 setup_temperature = 0.1
 setup_top_k = 0.5
 setup_top_p = 0.5
@@ -66,10 +65,9 @@ class AnalysisChunk:
 
 def estimate_tokens(text: str) -> int:
     """
-    Funzione per stimare il numero di token di un testo usando tiktoken
+    Stima il numero di token di un testo (approssimazione: 1 token ≈ 4 caratteri).
     """
-    enc = tiktoken.encoding_for_model("gpt-4o")
-    return len(enc.encode(text))
+    return len(text) // 4
 
 
 def calculate_importance_score(old_text: str, new_text: str) -> float:
@@ -344,24 +342,13 @@ def compare_requirements(
             },
         ]
 
-        AZURE_KEY = os.getenv("AZURE_OPENAI_API_KEY")
-        AZURE_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
-        AZURE_VER = os.getenv("AZURE_API_VERSION", "2024-08-01-preview")
-        AZURE_VER_GPT4O = os.getenv("AZURE_API_VERSION_GPT4O", "2024-12-01-preview")
-        if not AZURE_KEY or not AZURE_ENDPOINT:
-            logger.error(
-                "Azure API key o endpoint non definiti nelle variabili d'ambiente."
-            )
-            sys.exit(1)
+        _api_key = os.getenv("LLM_API_KEY", os.getenv("OPENAI_API_KEY", "EMPTY"))
+        _base_url = os.getenv("LLM_BASE_URL")
 
-        # Chiamata singola all'LLM con il prompt_amending custom
-        # client = AzureOpenAI(api_key=os.getenv("AZURE_OPENAI_API_KEY"), azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"), api_version=os.getenv("AZURE_API_VERSION_GPT4o"))
-
-        client = AzureOpenAI(
-            api_key=AZURE_KEY,
-            azure_endpoint=AZURE_ENDPOINT,
-            api_version=AZURE_VER_GPT4O,
-        )
+        _client_kwargs = {"api_key": _api_key}
+        if _base_url:
+            _client_kwargs["base_url"] = _base_url
+        client = OpenAI(**_client_kwargs)
 
         response = client.chat.completions.create(
             messages=messages,
@@ -438,25 +425,13 @@ def compare_requirements(
     chunks = create_optimal_chunks(comparison_pairs, embedding_model, max_tokens=20000)
     logger.info(f"Divisi in {len(chunks)} chunk per l'analisi")
 
-    # Inizializza il client AzureOpenAI
-    # azure_api_key = os.getenv("AZURE_OPENAI_API_KEY")
-    # azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
-    # azure_api_version = os.getenv("AZURE_API_VERSION", "2024-08-01-preview")
-    azure_api_key = os.getenv("AZURE_OPENAI_API_KEY")
-    azure_endpoint = os.getenv(
-        "AZURE_OPENAI_ENDPOINT", "https://cdpaistudioservices.openai.azure.com"
-    )
-    azure_api_version = os.getenv("AZURE_API_VERSION", "2024-08-01-preview")
-    if not azure_api_key or not azure_endpoint:
-        logger.error(
-            "Azure API key o endpoint non definiti nelle variabili d'ambiente."
-        )
-        sys.exit(1)
-    client = AzureOpenAI(
-        api_key=azure_api_key,
-        azure_endpoint=azure_endpoint,
-        api_version=azure_api_version,
-    )
+    # Inizializza il client OpenAI-compatible
+    _api_key = os.getenv("LLM_API_KEY", os.getenv("OPENAI_API_KEY", "EMPTY"))
+    _base_url = os.getenv("LLM_BASE_URL")
+    _client_kwargs = {"api_key": _api_key}
+    if _base_url:
+        _client_kwargs["base_url"] = _base_url
+    client = OpenAI(**_client_kwargs)
 
     analyses = []
     for i, chunk in enumerate(chunks, 1):
@@ -528,7 +503,7 @@ def pair_requirements(
 
 def analyze_chunk(
     chunk: AnalysisChunk,
-    client: AzureOpenAI,
+    client: OpenAI,
     prompt_template: str,
     doc1_display_name: str,
     doc2_display_name: str,  # Nuovi parametri
@@ -577,12 +552,8 @@ def main():
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("urllib3").setLevel(logging.WARNING)
 
-    if not os.environ.get("AZURE_OPENAI_API_KEY"):
-        raise SystemExit("Imposta la variabile d'ambiente AZURE_OPENAI_API_KEY prima di eseguire questo script.")
-    os.environ.setdefault(
-        "AZURE_OPENAI_ENDPOINT", "https://cdpaistudioservices.openai.azure.com/"
-    )
-    os.environ.setdefault("AZURE_API_VERSION", "2024-08-01-preview")
+    if not os.environ.get("LLM_API_KEY") and not os.environ.get("OPENAI_API_KEY"):
+        logger.warning("LLM_API_KEY non impostato — verrà usato 'EMPTY' (adatto a server locali senza autenticazione).")
     parser = argparse.ArgumentParser(
         description="Confronta i requisiti estratti (in formato JSON) di due documenti normativi."
     )
@@ -647,20 +618,13 @@ def main():
     chunks = create_optimal_chunks(comparison_pairs, embedding_model, max_tokens=20000)
     logger.info(f"{len(chunks)} chunk creati.")
 
-    # Inizializza il client Azure OpenAI (legge le variabili dall'ambiente)
-    azure_api_key = os.getenv("AZURE_OPENAI_API_KEY")
-    azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
-    azure_api_version = os.getenv("AZURE_API_VERSION", "2024-08-01-preview")
-    if not azure_api_key or not azure_endpoint:
-        logger.error(
-            "Azure API key o endpoint non definiti nelle variabili d'ambiente."
-        )
-        sys.exit(1)
-    client = AzureOpenAI(
-        api_key=azure_api_key,
-        azure_endpoint=azure_endpoint,
-        api_version=azure_api_version,
-    )
+    # Inizializza il client OpenAI-compatible
+    _api_key = os.getenv("LLM_API_KEY", os.getenv("OPENAI_API_KEY", "EMPTY"))
+    _base_url = os.getenv("LLM_BASE_URL")
+    _client_kwargs = {"api_key": _api_key}
+    if _base_url:
+        _client_kwargs["base_url"] = _base_url
+    client = OpenAI(**_client_kwargs)
 
     logger.info(f"\n\n\t\tAMENDING_MODE = {AMENDING_MODE}\n\n")
     if os.getenv("AMENDING_MODE"):

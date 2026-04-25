@@ -32,12 +32,7 @@ from job_store import (
     set_running,
 )
 
-# azure.storage.blob is kept installed for legacy imports but actual storage
-# goes through blob_storage_client (local filesystem).
-try:
-    from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient
-except ImportError:
-    BlobServiceClient = BlobClient = ContainerClient = None  # type: ignore
+# Storage handled by local filesystem via blob_storage_client.py
 
 from utils import blob_storage_client as bsc
 from dotenv import load_dotenv
@@ -47,13 +42,9 @@ from pathlib import Path
 from typing import List, Dict
 import requests
 import base64
-import tiktoken
 from PyPDF2 import PdfReader
 from io import BytesIO
-try:
-    from azure.core.exceptions import ResourceNotFoundError
-except ImportError:
-    ResourceNotFoundError = FileNotFoundError  # type: ignore
+ResourceNotFoundError = FileNotFoundError
 import threading
 import tempfile
 import glob
@@ -65,22 +56,7 @@ import numpy as np
 from sklearn.linear_model import LinearRegression
 from urllib.parse import urlencode
 
-# Initialize Azure Monitor OpenTelemetry for Application Insights
-try:
-    from azure.monitor.opentelemetry import configure_azure_monitor
-
-    # Configure OpenTelemetry with Application Insights
-    # The connection string should be set in the APPLICATIONINSIGHTS_CONNECTION_STRING environment variable
-    configure_azure_monitor(
-        logger_name=__name__,  # Set logger name to avoid collecting logs from the SDK itself
-    )
-    logging.info("Azure Monitor OpenTelemetry configured successfully")
-except ImportError:
-    logging.warning(
-        "Azure Monitor OpenTelemetry package not found. Application Insights telemetry will not be collected."
-    )
-except Exception as e:
-    logging.warning(f"Failed to configure Azure Monitor OpenTelemetry: {str(e)}")
+# Monitoring: standard Python logging is used. Azure Monitor removed.
 
 DEBUG = False
 
@@ -3288,9 +3264,9 @@ def _blob_client(blob_path: str) -> BlobClient:
     return bsc.get_blob_client(blob_path)
 
 
-def get_tokens(text):
-    tokenizer = tiktoken.encoding_for_model("gpt-4-32k")
-    return tokenizer.encode(text)
+def get_tokens(text: str) -> range:
+    """Approximate token count — 1 token ≈ 4 characters."""
+    return range(len(text) // 4)
 
 
 def load_tokens_per_second() -> float:
@@ -3386,8 +3362,7 @@ def update_and_compute_tokens_per_second(token_count: int, actual_time: float) -
 
 def estimate_processing_time(text: str, tokens_per_second: float) -> dict:
     logging.info("====================estimate_processing_time====================")
-    enc = tiktoken.encoding_for_model("gpt-4o")
-    token_count = len(enc.encode(text))
+    token_count = len(text) // 4  # approximation: 1 token ≈ 4 characters
     estimated_time = round((token_count / tokens_per_second) * 1.2, 2)
     return {"token_count": token_count, "estimated_time_sec": estimated_time}
 
@@ -4061,27 +4036,17 @@ def track_metric_with_appinsights(name, value, properties=None):
 # Funzione per dividere il testo in chunks presa da requirements_analyzer
 def split_into_chunks(
     text: str,
-    chunk_size: int = 1500,
-    overlap: int = 250,
-    model: str = "gpt-4-32k",
+    chunk_size: int = 6000,
+    overlap: int = 1000,
+    model: str = "",  # unused — kept for backward compatibility
 ) -> List[str]:
-    tokenizer = tiktoken.encoding_for_model(model)
-    tokens = tokenizer.encode(text)
-    chunks = []
-
-    start_positions = list(range(0, len(tokens), chunk_size - overlap))
-
-    for start_idx in start_positions:
-        end_idx = min(start_idx + chunk_size, len(tokens))
-        chunk_tokens = tokens[start_idx:end_idx]
-        chunk_text = tokenizer.decode(chunk_tokens)
-        chunks.append(chunk_text)
-
-        if end_idx >= len(tokens):
-            break
-
-    logger.info(f"Testo diviso in {len(chunks)} chunks")
-    return chunks
+    from langchain.text_splitter import RecursiveCharacterTextSplitter
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=chunk_size,
+        chunk_overlap=overlap,
+        separators=["\n\n", "\n", " ", ""],
+    )
+    return splitter.split_text(text)
 
 
 @app.route(route="delete-files", methods=["DELETE"])

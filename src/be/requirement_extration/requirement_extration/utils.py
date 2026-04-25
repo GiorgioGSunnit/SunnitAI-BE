@@ -6,8 +6,7 @@ import logging
 from threading import Lock
 from rich.console import Console
 from rich.table import Table
-from azure.storage.blob import BlobServiceClient
-from azure.core.exceptions import ResourceNotFoundError
+ResourceNotFoundError = FileNotFoundError
 
 console = Console()
 
@@ -149,28 +148,30 @@ def print_mapping(mapping):
         print(f"{pdf_name} -> {json_name}")
 
 
+_LOCAL_STORAGE_ROOT = Path(os.getenv("LOCAL_STORAGE_PATH", "/opt/sunnitai-be/storage"))
+
+_BLOB_PREFIXES = {
+    "requirements": "requirements",
+    "sanctions": "sanctions",
+    "subjects": "subjects",
+    "comparisons": "comparisons",
+    "amendments": "amendments",
+    "versionings": "versionings",
+    "implementations": "implementations",
+}
+
+
 def upload_to_blob(category: str, file_path: Path, blob_name: str = None):
-    blob_service = BlobServiceClient.from_connection_string(
-        os.getenv("CONNECTION_STRING"), logging_enable=False
-    )
-    container_name = os.getenv("CONTAINER_NAME")
-    container_client = blob_service.get_container_client(container_name)
-    BLOB_PREFIXES = {
-        "requirements": "requirements",
-        "sanctions": "sanctions",
-        "subjects": "subjects",
-        "comparisons": "comparisons",
-        "amendments": "amendments",
-        "versionings": "versionings",
-        "implementations": "implementations",
-    }
-    prefix = BLOB_PREFIXES.get(category)
+    """Save file to local storage (replaces Azure Blob upload)."""
+    prefix = _BLOB_PREFIXES.get(category)
     name = blob_name or file_path.name
     if not prefix:
         raise ValueError(f"Categoria blob sconosciuta: {category}")
-    with open(file_path, "rb") as data:
-        container_client.upload_blob(f"{prefix}/{name}", data, overwrite=True)
-    logger.info(f"[BLOB] Caricato {file_path} → {prefix}/{name}")
+    dest = _LOCAL_STORAGE_ROOT / prefix / name
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    import shutil
+    shutil.copy2(file_path, dest)
+    logger.info(f"[STORAGE] Salvato {file_path} → {dest}")
 
 
 def check_file_exists(file_path: str) -> bool:
@@ -179,79 +180,27 @@ def check_file_exists(file_path: str) -> bool:
 
 
 def blob_exists(category: str, blob_name: str) -> bool:
-    """Check if a blob exists in Azure Blob Storage."""
-    try:
-        blob_service = BlobServiceClient.from_connection_string(
-            os.getenv("CONNECTION_STRING"), logging_enable=False
-        )
-        container_name = os.getenv("CONTAINER_NAME")
-        container_client = blob_service.get_container_client(container_name)
-
-        BLOB_PREFIXES = {
-            "versionings": "versionings",
-            "implementations": "implementations",
-            "requirements": "requirements",
-            "sanctions": "sanctions",
-            "subjects": "subjects",
-            "comparisons": "comparisons",
-            "amendments": "amendments",
-        }
-        prefix = BLOB_PREFIXES.get(category)
-        if not prefix:
-            raise ValueError(f"Categoria blob sconosciuta: {category}")
-
-        blob_path = f"{prefix}/{blob_name}"
-        blob_client = container_client.get_blob_client(blob_path)
-        return blob_client.exists()
-    except Exception as e:
-        logger.error(
-            f"Errore durante il controllo del blob {category}/{blob_name}: {str(e)}"
-        )
+    """Check if a file exists in local storage (replaces Azure Blob check)."""
+    prefix = _BLOB_PREFIXES.get(category)
+    if not prefix:
         return False
+    return (_LOCAL_STORAGE_ROOT / prefix / blob_name).exists()
 
 
 def download_from_blob(category: str, blob_name: str, destination_path: Path) -> bool:
-    """Download a blob from Azure Blob Storage to the local filesystem."""
-    try:
-        blob_service = BlobServiceClient.from_connection_string(
-            os.getenv("CONNECTION_STRING"), logging_enable=False
-        )
-        container_name = os.getenv("CONTAINER_NAME")
-        container_client = blob_service.get_container_client(container_name)
-
-        BLOB_PREFIXES = {
-            "requirements": "requirements",
-            "sanctions": "sanctions",
-            "subjects": "subjects",
-            "comparisons": "comparisons",
-            "amendments": "amendments",
-            "versionings": "versionings",
-            "implementations": "implementations",
-        }
-        prefix = BLOB_PREFIXES.get(category)
-        if not prefix:
-            raise ValueError(f"Categoria blob sconosciuta: {category}")
-
-        blob_path = f"{prefix}/{blob_name}"
-        blob_client = container_client.get_blob_client(blob_path)
-
-        # Create directories if they don't exist
-        destination_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # Download the blob to a local file
-        with open(destination_path, "wb") as download_file:
-            download_file.write(blob_client.download_blob().readall())
-
-        logger.info(f"[BLOB] Scaricato {blob_path} → {destination_path}")
-        return True
-    except ResourceNotFoundError:
-        logger.warning(f"[BLOB] Blob non trovato: {category}/{blob_name}")
+    """Copy file from local storage to destination (replaces Azure Blob download)."""
+    prefix = _BLOB_PREFIXES.get(category)
+    if not prefix:
+        raise ValueError(f"Categoria blob sconosciuta: {category}")
+    source = _LOCAL_STORAGE_ROOT / prefix / blob_name
+    if not source.exists():
+        logger.warning(f"[STORAGE] File non trovato: {source}")
         return False
-    except Exception as e:
-        logger.error(
-            f"[BLOB] Errore durante il download del blob {category}/{blob_name}: {str(e)}"
-        )
-        return False
+    destination_path.parent.mkdir(parents=True, exist_ok=True)
+    import shutil
+    shutil.copy2(source, destination_path)
+    logger.info(f"[STORAGE] Scaricato {source} → {destination_path}")
+    return True
 
 # === File-system house-keeping =================================================
 

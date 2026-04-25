@@ -27,8 +27,8 @@ REMOTE_DIR="/opt/sunnitai-be"
 PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
 ENV_FILE="$PROJECT_ROOT/.env.production"
 
-PORT_FUNCTIONS=7071   # Azure Functions host
-PORT_VMAI=2025        # uvicorn / call_fast_api
+PORT_FUNCTIONS=7071   # azure-durable-function FastAPI app (azure_func_compat)
+PORT_VMAI=2025        # requirement_extration FastAPI app (call_fast_api)
 
 # -------------------------------------------------------
 # Preflight checks
@@ -131,13 +131,24 @@ echo ""
 echo "Waiting for service to be ready..."
 sleep 8
 
-HEALTH_URL="http://$SERVER:$PORT_FUNCTIONS/api/health"
-if curl -sf --max-time 10 "$HEALTH_URL" > /dev/null 2>&1; then
-    echo "  Health check PASSED ($HEALTH_URL)"
-else
-    echo "  WARNING: Health check did not respond at $HEALTH_URL"
-    echo "  The service may still be starting up. Check with:"
-    echo "    ssh -i $SSH_KEY root@$SERVER 'docker logs sunnitai-be --tail 50'"
+ALL_OK=true
+for CHECK in "$PORT_FUNCTIONS/api/health" "$PORT_VMAI/health"; do
+    PORT="${CHECK%%/*}"
+    PATH_="${CHECK#*/}"
+    URL="http://$SERVER:$CHECK"
+    if curl -sf --max-time 10 "$URL" > /dev/null 2>&1; then
+        echo "  Health check PASSED ($URL)"
+    else
+        echo "  WARNING: Health check did not respond at $URL"
+        ALL_OK=false
+    fi
+done
+
+if [ "$ALL_OK" = false ]; then
+    echo "  One or more services may still be starting up. Check with:"
+    echo "    ssh -i $SSH_KEY root@$SERVER 'journalctl -u sunnitai-functions -n 30'"
+    echo "    ssh -i $SSH_KEY root@$SERVER 'journalctl -u sunnitai-vmai -n 30'"
+    echo "    ssh -i $SSH_KEY root@$SERVER 'journalctl -u sunnitai-watcher -n 30'"
 fi
 
 echo ""
@@ -147,10 +158,12 @@ echo "==========================================="
 echo ""
 echo "  Functions API:  http://$SERVER:$PORT_FUNCTIONS"
 echo "  VMAI API:       http://$SERVER:$PORT_VMAI"
-echo "  Health:         http://$SERVER:$PORT_FUNCTIONS/api/health"
+echo "  Watcher:        sunnitai-watcher (drop PDFs into \$WATCH_DIR to ingest)"
 echo ""
 echo "  Useful commands:"
-echo "    Logs:    ssh -i $SSH_KEY root@$SERVER 'docker logs sunnitai-be -f'"
-echo "    Status:  ssh -i $SSH_KEY root@$SERVER 'docker ps'"
-echo "    Shell:   ssh -i $SSH_KEY root@$SERVER 'docker exec -it sunnitai-be bash'"
+echo "    Logs:    ssh -i $SSH_KEY root@$SERVER 'journalctl -u sunnitai-functions -f'"
+echo "             ssh -i $SSH_KEY root@$SERVER 'journalctl -u sunnitai-vmai -f'"
+echo "             ssh -i $SSH_KEY root@$SERVER 'journalctl -u sunnitai-watcher -f'"
+echo "    Status:  ssh -i $SSH_KEY root@$SERVER 'systemctl status sunnitai-functions sunnitai-vmai sunnitai-watcher'"
+echo "    Shell:   ssh -i $SSH_KEY root@$SERVER"
 echo ""

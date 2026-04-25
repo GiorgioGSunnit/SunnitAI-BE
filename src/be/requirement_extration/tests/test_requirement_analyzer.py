@@ -38,7 +38,7 @@ class TestRequirementAnalyzer(unittest.TestCase):
         analyzer = RequirementAnalyzer()
         text = "word " * 1000  # 1000 words
         chunks = analyzer._split_into_chunks(
-            text, chunk_size=100, overlap=10, model="gpt-4-32k"
+            text, chunk_size=100, overlap=10, model="cl100k_base"
         )
         self.assertTrue(len(chunks) > 1)
         self.assertIsInstance(chunks[0], str)

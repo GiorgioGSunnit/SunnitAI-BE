@@ -28,13 +28,14 @@ def embeddings_enabled() -> bool:
 def _get_embedder():
     if not embeddings_enabled():
         raise RuntimeError("Embeddings are disabled by configuration.")
-    # Uses Azure OpenAI embeddings deployment from settings/env.
+    # Uses the OpenAI-compatible embeddings endpoint configured via
+    # LLM_EMBEDDING_BASE_URL / LLM_EMBEDDING_API_KEY / LLM_EMBEDDING_MODEL.
     try:
         from lex_package.llm.factory import build_embedding_model
     except ModuleNotFoundError as e:
         raise ModuleNotFoundError(
             "Embeddings dependencies are missing. Ensure 'langchain-openai' is installed "
-            "and Azure OpenAI settings are configured."
+            "and LLM_EMBEDDING_MODEL is set in your .env."
         ) from e
     return build_embedding_model(target="primary")
 

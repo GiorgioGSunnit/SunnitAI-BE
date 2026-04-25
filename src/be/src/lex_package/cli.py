@@ -54,12 +54,11 @@ from lex_package.confronto_search.search_confronto import confronto_searchai
 
 
 def _check_azure_credentials():
-    """Verifica che le credenziali Azure siano configurate (lazy check)."""
-    api_key = os.getenv("AZURE_OPENAI_API_KEY")
-    api_version = os.getenv("AZURE_OPENAI_API_VERSION")
-    if not api_key or not api_version:
+    """Verifica che le credenziali LLM siano configurate (lazy check)."""
+    api_key = os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY")
+    if not api_key:
         print(
-            "Error: The AZURE_OPENAI_API_KEY or AZURE_OPENAI_API_VERSION environment variables not set."
+            "Error: LLM_API_KEY environment variable not set."
         )
         print("Please set it before running the script.")
         sys.exit(1)

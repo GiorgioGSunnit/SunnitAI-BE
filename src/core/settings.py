@@ -51,30 +51,7 @@ class Settings(BaseSettings):
     # ── Misc ─────────────────────────────────────────────────────────────────
     client_state: str = Field(default="someSecretClientState")
     notification_email: Optional[str] = None
-    translator_key: Optional[str] = None
-    translator_location: Optional[str] = None
 
-    # ── Azure stubs (always None — kept for API compatibility) ───────────────
-    # Code that does `if settings.azure_openai:` will take the fallback path.
-    @property
-    def azure_openai(self):
-        return None
-
-    @property
-    def azure_storage(self):
-        return None
-
-    @property
-    def azure_ai_search(self):
-        return None
-
-    @property
-    def azure_reader(self):
-        return None
-
-    @property
-    def azure_sender(self):
-        return None
 
 
 def get_settings() -> Settings:

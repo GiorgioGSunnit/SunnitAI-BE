@@ -27,6 +27,7 @@ LOG_FILE="/var/log/sunnitai-be-deploy.log"
 PYTHONAPP_PATH="$APP_DIR/src:$APP_DIR/src/be/src"
 SVC_FUNCTIONS="sunnitai-functions"
 SVC_VMAI="sunnitai-vmai"
+SVC_WATCHER="sunnitai-watcher"
 
 log()  { echo "[$(date '+%H:%M:%S')] $*" | tee -a "$LOG_FILE"; }
 ok()   { echo "[$(date '+%H:%M:%S')] ✅ $*" | tee -a "$LOG_FILE"; }
@@ -198,6 +199,29 @@ SyslogIdentifier=${SVC_VMAI}
 WantedBy=multi-user.target
 EOF
 
+cat > /etc/systemd/system/${SVC_WATCHER}.service << EOF
+[Unit]
+Description=SunnitAI Filesystem Watcher (PDF ingestion → Neo4J)
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=${APP_DIR}/src/be/src/lex_package
+Environment=PYTHONPATH=${PYTHONAPP_PATH}
+EnvironmentFile=${APP_DIR}/.env
+ExecStart=${VENV}/bin/python -m lex_package.watcher
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=${SVC_WATCHER}
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
 ok "Unit files written"
 
 # -------------------------------------------------------
@@ -208,7 +232,7 @@ log "[6/7] Restarting services..."
 
 systemctl daemon-reload
 
-for svc in "$SVC_FUNCTIONS" "$SVC_VMAI"; do
+for svc in "$SVC_FUNCTIONS" "$SVC_VMAI" "$SVC_WATCHER"; do
     systemctl enable "$svc" --quiet
     systemctl restart "$svc"
     ok "$svc restarted"
@@ -222,7 +246,7 @@ log "[7/7] Verifying services..."
 sleep 6
 
 ALL_OK=true
-for svc in "$SVC_FUNCTIONS" "$SVC_VMAI"; do
+for svc in "$SVC_FUNCTIONS" "$SVC_VMAI" "$SVC_WATCHER"; do
     STATUS=$(systemctl is-active "$svc" 2>/dev/null || echo "unknown")
     if [ "$STATUS" = "active" ]; then
         ok "$svc is active"
@@ -246,17 +270,22 @@ log "==========================================="
 log ""
 log "  Functions API:  http://localhost:${PORT_FUNCTIONS}"
 log "  VMAI API:       http://localhost:${PORT_VMAI}"
+log "  Watcher:        ${SVC_WATCHER} (watches \$WATCH_DIR for PDFs)"
 log "  Full log:       ${LOG_FILE}"
 log ""
 log "  Manage:"
 log "    Logs (live):  journalctl -u ${SVC_FUNCTIONS} -f"
 log "                  journalctl -u ${SVC_VMAI} -f"
-log "    Status:       systemctl status ${SVC_FUNCTIONS} ${SVC_VMAI}"
-log "    Stop:         systemctl stop ${SVC_FUNCTIONS} ${SVC_VMAI}"
-log "    Restart:      systemctl restart ${SVC_FUNCTIONS} ${SVC_VMAI}"
+log "                  journalctl -u ${SVC_WATCHER} -f"
+log "    Status:       systemctl status ${SVC_FUNCTIONS} ${SVC_VMAI} ${SVC_WATCHER}"
+log "    Stop:         systemctl stop ${SVC_FUNCTIONS} ${SVC_VMAI} ${SVC_WATCHER}"
+log "    Restart:      systemctl restart ${SVC_FUNCTIONS} ${SVC_VMAI} ${SVC_WATCHER}"
+log ""
+log "  Ingest a PDF:   cp /path/to/doc.pdf \$WATCH_DIR/"
+log "                  (watcher picks it up within ${POLL_INTERVAL:-10}s)"
 log ""
 log "  Rollback (if needed):"
-log "    systemctl stop ${SVC_FUNCTIONS} ${SVC_VMAI}"
+log "    systemctl stop ${SVC_FUNCTIONS} ${SVC_VMAI} ${SVC_WATCHER}"
 log "    rm -rf ${APP_DIR}/src && cp -r ${BACKUP_DIR} ${APP_DIR}/src"
-log "    systemctl start ${SVC_FUNCTIONS} ${SVC_VMAI}"
+log "    systemctl start ${SVC_FUNCTIONS} ${SVC_VMAI} ${SVC_WATCHER}"
 log ""

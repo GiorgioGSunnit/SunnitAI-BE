@@ -4,7 +4,7 @@ metadata:
   name: ${APP_NAME}-service
   namespace: ${NAMESPACE}
 spec:
-  replicas: 1 #3
+  replicas: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: "${APP_NAME}-service"
@@ -12,26 +12,18 @@ spec:
   template:
     metadata:
       labels:
-        azure.workload.identity/use: "true"
         app.kubernetes.io/name: "${APP_NAME}-service"
         app.kubernetes.io/part-of: "${NAMESPACE}"
     spec:
-      serviceAccountName: ${NAMESPACE}-sa # Must match the Service Account name
-      # Override DNS: il private endpoint dell'APIM (172.17.71.126) ha la porta 443
-      # bloccata. Usiamo l'IP pubblico via Traffic Manager finche' infra non fixa.
-      hostAliases:
-        - ip: "172.213.74.2"
-          hostnames:
-            - "dev-api.cdp.it"
       containers:
       - name: ${APP_NAME}-container
         image: ${IMAGE_NAME}
         envFrom:
         - configMapRef:
             name: ${APP_NAME}-configmap
+        - secretRef:
+            name: ${APP_NAME}-secrets
         ports:
-          - containerPort: 7071
-            name: functions
           - containerPort: 2025
             name: fastapi
         resources:
@@ -41,39 +33,13 @@ spec:
           limits:
             memory: "1Gi"
             cpu: "500m"
-      # Azurite sidecar: usato quando USE_AZURITE=true nel configmap (workaround senza permessi Storage)
-      - name: azurite
-        image: mcr.microsoft.com/azure-storage/azurite:latest
-        command: ["azurite"]
-        args:
-          - "--blobHost"
-          - "0.0.0.0"
-          - "--queueHost"
-          - "0.0.0.0"
-          - "--tableHost"
-          - "0.0.0.0"
-          - "-l"
-          - "/data"
-        ports:
-          - containerPort: 10000
-            name: blob
-          - containerPort: 10001
-            name: queue
-          - containerPort: 10002
-            name: table
         volumeMounts:
-          - name: azurite-data
-            mountPath: /data
-        resources:
-          requests:
-            memory: "64Mi"
-            cpu: "50m"
-          limits:
-            memory: "128Mi"
-            cpu: "100m"
+          - name: local-storage
+            mountPath: /opt/sunnitai-be/storage
       volumes:
-        - name: azurite-data
-          emptyDir: {}
+        - name: local-storage
+          persistentVolumeClaim:
+            claimName: ${APP_NAME}-storage-pvc
 
 ---
 
@@ -88,9 +54,6 @@ spec:
     app.kubernetes.io/name: "${APP_NAME}-service"
     app.kubernetes.io/part-of: "${NAMESPACE}"
   ports:
-  - port: 7071
-    targetPort: 7071
-    name: functions
   - port: 2025
     targetPort: 2025
     name: fastapi

@@ -4,18 +4,13 @@ import argparse
 import json
 import re
 from typing import Dict, List, Optional
-from azure.core.credentials import AzureKeyCredential
-from azure.search.documents import SearchClient
-from azure.search.documents.models import QueryType, QueryCaptionType, QueryAnswerType
-
 class EnhancedSearchService:
-    def __init__(self, endpoint: str, index_name: str, api_key: str):
-        self.search_client = SearchClient(
-            endpoint=endpoint,
-            index_name=index_name,
-            credential=AzureKeyCredential(api_key)
-        )
+    """Azure Search has been removed. This class is a no-op stub."""
+
+    def __init__(self, endpoint: str = "", index_name: str = "", api_key: str = ""):
+        self.search_client = None
         self.logger = logging.getLogger(__name__)
+        self.logger.warning("Azure Search removed — full-text search features are disabled.")
 
     def remove_stopwords(self, text: str) -> str:
         # Lista delle stopwords italiane

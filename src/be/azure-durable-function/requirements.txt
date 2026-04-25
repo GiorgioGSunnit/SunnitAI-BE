@@ -1,19 +1,10 @@
-# DO NOT include azure-functions-worker in this file
-# The Python Worker is managed by Azure Functions platform
-# Manually managing azure-functions-worker may cause unexpected issues
-#
 # NOTE: Questo file è usato solo per deploy standalone.
 # Il Dockerfile principale usa requirements.txt dalla root del progetto.
+# Azure Functions runtime packages rimossi — il server gira su FastAPI standalone.
 
-azure-functions
-azurefunctions-extensions-bindings-blob
-azurefunctions-extensions-http-fastapi
-azure-storage-blob
 python-dotenv
 fastapi
-tiktoken
 PyPDF2
 PyMuPDF==1.24.13
-azure-monitor-opentelemetry
 scikit-learn
 numpy==1.26.4
