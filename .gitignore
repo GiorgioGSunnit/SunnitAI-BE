@@ -55,6 +55,17 @@ log*/*
 .vscode
 .vscode/
 
+# IDE
+.idea/
+
+# Generated parser / analysis output directories
+src/be/src/out_parser/
+src/be/src/out_analisi/
+src/be/src/out_flat/
+src/be/src/out_schema_attuativo/
+src/be/src/out_confronto_*/
+src/be/src/out_enriched/
+
 /search_example_results.json
 /src/lex_package/emendativa-test.json
 /src/lex_package/confronto_search/test/
