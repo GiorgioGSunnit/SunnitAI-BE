@@ -275,8 +275,12 @@ async def main(args: argparse.Namespace) -> None:
     _save_json({"profile": profile_info, "articoli": articoli}, out_dir / "parse.json")
 
     if args.skip_llm:
-        # Parse-only path: build lightweight graph directly from articoli
-        _section("LLM skipped — building parse-only graph payload")
+        # Parse-only path: builds a simplified Document→Articolo→Comma graph.
+        # NOTE: this is a structural test only — the real production graph uses
+        # LEGAL_DOC → DOCUMENT_SECTION nodes built from LLM analysis output.
+        # Neo4J nodes written here will have a different schema than production.
+        _section("LLM skipped — parse-only graph payload (simplified schema)")
+        print("  ⚠️  NOTE: real graph (LEGAL_DOC/DOCUMENT_SECTION) requires full pipeline")
         payload = _parse_only_payload(articoli, doc_name, file_name, doc_hash, pdf_path_str)
         print(f"  Nodes       : {len(payload['nodes'])}")
         print(f"  Relationships: {len(payload['relationships'])}")

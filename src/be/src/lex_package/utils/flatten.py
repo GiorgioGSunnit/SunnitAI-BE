@@ -399,6 +399,17 @@ def build_neo4j_graph_payload(
             if parent:
                 relationships.append({"type": "PART_OF", "source": sec_id, "target": parent})
 
+    # ── NEXT relationships — preserve reading order between sections ──────────
+    for i in range(len(section_order) - 1):
+        curr = section_order[i]["section_id"]
+        nxt = section_order[i + 1]["section_id"]
+        relationships.append({
+            "type": "NEXT",
+            "source": curr,
+            "target": nxt,
+            "properties": {"order": i},
+        })
+
     doc_description = _trim_words(" ".join(section_abstracts), 500)
     for n in nodes:
         if n["id"] == doc_node_id:
