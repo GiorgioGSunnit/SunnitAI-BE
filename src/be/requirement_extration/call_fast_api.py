@@ -83,6 +83,9 @@ from lex_package.utils.normalize_articoli_tree import (
     ensure_identificativo_fields_for_confronto,
     normalizza_gerarchia_articoli,
 )
+from lex_package.parse import parse as lex_parse
+from lex_package.parsing_utils.document_profiler import profile_document
+from lex_package.utils.metadata_extraction import extract_document_metadata
 
 # Import the search module (now with proper naming)
 
@@ -159,6 +162,23 @@ async def health_check():
         }
     }
     return health_status
+
+
+# ── Simple job store for parse / ingest endpoints ─────────────────────────────
+# { job_id: {"status": "running"|"completed"|"failed", "result": ..., "error": ...} }
+_jobs: Dict[str, Dict[str, Any]] = {}
+_jobs_lock = threading.Lock()
+_job_executor = ThreadPoolExecutor(max_workers=4)
+
+
+def _job_set(job_id: str, status: str, **kwargs) -> None:
+    with _jobs_lock:
+        _jobs[job_id] = {"status": status, "updated_at": datetime.now(timezone.utc).isoformat(), **kwargs}
+
+
+def _job_get(job_id: str) -> Optional[Dict[str, Any]]:
+    with _jobs_lock:
+        return _jobs.get(job_id)
 
 
 # Global store for analysis progress
@@ -3548,4 +3568,220 @@ async def delete_files(request: DeleteFilesRequest):
         "deletedFiles": list(set(deleted_files)),  # Remove duplicates
         "failedFiles": failed_files,
         "message": f"Deleted {len(set(deleted_files))} files",
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ── Parse / Metadata / Ingest endpoints (for FE on port 2025) ─────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ── GET /api/job/{job_id} ──────────────────────────────────────────────────────
+
+@app.get("/api/job/{job_id}", tags=["Jobs"])
+async def get_job_status(job_id: str):
+    """Poll the status of an async job started by /api/parse or /api/document/ingest."""
+    job = _job_get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
+    return job
+
+
+# ── POST /api/parse (async) ───────────────────────────────────────────────────
+
+def _run_parse_job(job_id: str, pdf_bytes: bytes, file_name: str, template_hint: Optional[str]) -> None:
+    import tempfile
+    tmp_path = None
+    try:
+        _job_set(job_id, "running", step="parsing")
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            tmp.write(pdf_bytes)
+            tmp_path = tmp.name
+
+        # Profile first (fast, no LLM) to capture template metadata and scores
+        profile = profile_document(tmp_path, file_name, template_hint=template_hint)
+        template_meta = profile.template_meta
+
+        # parse() returns articoli list
+        articoli = lex_parse(tmp_path, file_name, template_hint=template_hint)
+
+        n_commi = sum(len(a.get("commi", [])) for a in articoli)
+        n_sottocommi = sum(
+            len(c.get("sottocommi", []))
+            for a in articoli
+            for c in a.get("commi", [])
+        )
+
+        _job_set(
+            job_id,
+            "completed",
+            result={
+                "document_name": file_name,
+                "template_used": template_meta.get("id", ""),
+                "template_label": template_meta.get("label", ""),
+                "confidence": profile.confidence,
+                "scores": profile.scores,
+                "articoli": articoli,
+                "stats": {
+                    "articoli": len(articoli),
+                    "commi": n_commi,
+                    "sottocommi": n_sottocommi,
+                },
+            },
+        )
+    except Exception as exc:
+        logger.exception("[parse_job] %s failed: %s", job_id, exc)
+        _job_set(job_id, "failed", error=str(exc))
+    finally:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
+
+@app.post("/api/parse", status_code=202, tags=["Parse"])
+async def parse_document(
+    file: UploadFile = File(...),
+    template_hint: Optional[str] = Query(default=None, description="Override template selection (e.g. 'banca', 'regolamento')"),
+):
+    """
+    Trigger async PDF parsing.
+
+    Returns 202 with a `job_id`. Poll `GET /api/job/{job_id}` until
+    `status` is `"completed"` or `"failed"`.
+    """
+    pdf_bytes = await file.read()
+    job_id = str(uuid.uuid4())
+    _job_set(job_id, "pending")
+    _job_executor.submit(_run_parse_job, job_id, pdf_bytes, file.filename or "document.pdf", template_hint)
+    return {
+        "job_id": job_id,
+        "status": "pending",
+        "statusQueryGetUri": f"/api/job/{job_id}",
+    }
+
+
+# ── POST /api/metadata (sync) ─────────────────────────────────────────────────
+
+@app.post("/api/metadata", tags=["Parse"])
+async def extract_metadata(file: UploadFile = File(...)):
+    """
+    Synchronously extract structured metadata from a PDF (first ~4 pages).
+
+    Returns 200 with `{document_name, document_number, issue_date, editor_enterprises}`.
+    Returns 503 if the LLM is unavailable or returns no result.
+    """
+    import tempfile
+    pdf_bytes = await file.read()
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            tmp.write(pdf_bytes)
+            tmp_path = tmp.name
+
+        file_name = file.filename or "document.pdf"
+        loop = asyncio.get_event_loop()
+        metadata = await loop.run_in_executor(
+            None,
+            lambda: extract_document_metadata(tmp_path, file_name),
+        )
+
+        if metadata is None:
+            raise HTTPException(
+                status_code=503,
+                detail="LLM unavailable or returned no result — retry later",
+            )
+
+        return metadata.model_dump() if hasattr(metadata, "model_dump") else vars(metadata)
+    finally:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
+
+# ── POST /api/document/ingest (async: parse + metadata) ───────────────────────
+
+def _run_ingest_job(job_id: str, pdf_bytes: bytes, file_name: str, template_hint: Optional[str]) -> None:
+    import tempfile
+    tmp_path = None
+    try:
+        _job_set(job_id, "running", step="parsing")
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            tmp.write(pdf_bytes)
+            tmp_path = tmp.name
+
+        # Step 1 — profile (fast, no LLM) then parse
+        profile = profile_document(tmp_path, file_name, template_hint=template_hint)
+        template_meta = profile.template_meta
+        articoli = lex_parse(tmp_path, file_name, template_hint=template_hint)
+        n_commi = sum(len(a.get("commi", [])) for a in articoli)
+        n_sottocommi = sum(
+            len(c.get("sottocommi", []))
+            for a in articoli
+            for c in a.get("commi", [])
+        )
+
+        _job_set(job_id, "running", step="metadata_extraction")
+
+        # Step 2 — metadata (LLM call)
+        try:
+            metadata = extract_document_metadata(tmp_path, file_name)
+            metadata_dict = metadata.model_dump() if metadata and hasattr(metadata, "model_dump") else (vars(metadata) if metadata else None)
+        except Exception as exc:
+            logger.warning("[ingest_job] metadata extraction failed for %s: %s", job_id, exc)
+            metadata_dict = None
+
+        _job_set(
+            job_id,
+            "completed",
+            result={
+                "parse": {
+                    "document_name": file_name,
+                    "template_used": template_meta.get("id", ""),
+                    "template_label": template_meta.get("label", ""),
+                    "confidence": profile.confidence,
+                    "scores": profile.scores,
+                    "articoli": articoli,
+                    "stats": {
+                        "articoli": len(articoli),
+                        "commi": n_commi,
+                        "sottocommi": n_sottocommi,
+                    },
+                },
+                "metadata": metadata_dict,
+            },
+        )
+    except Exception as exc:
+        logger.exception("[ingest_job] %s failed: %s", job_id, exc)
+        _job_set(job_id, "failed", error=str(exc))
+    finally:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
+
+@app.post("/api/document/ingest", status_code=202, tags=["Parse"])
+async def ingest_document(
+    file: UploadFile = File(...),
+    template_hint: Optional[str] = Query(default=None, description="Override template selection (e.g. 'banca', 'regolamento')"),
+):
+    """
+    Trigger async document ingestion: parse + metadata extraction.
+
+    Returns 202 with a `job_id`. Poll `GET /api/job/{job_id}` until
+    `status` is `"completed"` or `"failed"`.
+    The result contains `parse` (articoli tree + stats) and `metadata` (LLM-extracted fields).
+    """
+    pdf_bytes = await file.read()
+    job_id = str(uuid.uuid4())
+    _job_set(job_id, "pending")
+    _job_executor.submit(_run_ingest_job, job_id, pdf_bytes, file.filename or "document.pdf", template_hint)
+    return {
+        "job_id": job_id,
+        "status": "pending",
+        "statusQueryGetUri": f"/api/job/{job_id}",
     }
