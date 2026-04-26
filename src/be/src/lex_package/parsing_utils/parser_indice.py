@@ -157,8 +157,14 @@ def parser_indice(pdf_path="../data/documento.pdf") -> list[dict]:
                             "titolo": titolo,
                         })
 
-    from utils.blob_storage_client import upload_debug_log
-    upload_debug_log("debug_log_parseIndice.txt", "\n".join(debug_log))
+    # Debug log — written locally (Azure blob upload removed)
+    try:
+        import logging as _logging
+        _logging.getLogger("lex_package.parser_indice").debug(
+            "parse_indice debug log:\n%s", "\n".join(debug_log)
+        )
+    except Exception:
+        pass
 
     return indice
 

@@ -219,21 +219,29 @@ def _select_parser(profile: DocumentProfile) -> str:
             best_type = tid
 
     if best_type:
-        # Override: banca selected but document has formal "Articolo N" article numbering
-        # in the body → it is a regolamento-style document, not a banca circular.
-        # This covers EXT_1_2-type docs whose filename happens to match banca keywords
-        # but whose structure uses numbered articles (Articolo 1, Articolo 2, …).
+        # Override: banca selected but its score exceeds its own max_score — this
+        # means the filename is artificially inflating the score (e.g. filename
+        # contains "banca"/"disposizioni"/"avc" giving +3 even for non-circular docs).
+        # When this happens AND the document has formal "Articolo N" article numbering
+        # in the body, it is a regolamento-style document, not a banca circular.
+        # We do NOT override when banca score ≤ max_score — in that case the content
+        # itself supports the banca classification (e.g. EXT_1_1-type documents).
         if best_type == "banca" and profile.has_articolo_in_body:
-            regolamento_score = scores.get("regolamento", 0)
-            regolamento_tmpl = next((t for t in _TEMPLATES if t["id"] == "regolamento"), None)
-            reg_threshold = regolamento_tmpl.get("threshold", 0) if regolamento_tmpl else 0
-            if regolamento_score >= reg_threshold:
-                print(
-                    f"[INFO] Formal 'Articolo N' numbering found in body "
-                    f"(regolamento score={regolamento_score} ≥ threshold={reg_threshold}) "
-                    f"→ overriding banca → regolamento"
-                )
-                best_type = "regolamento"
+            banca_tmpl = next((t for t in _TEMPLATES if t["id"] == "banca"), None)
+            banca_max_score = banca_tmpl.get("max_score", 1) if banca_tmpl else 1
+            banca_score = scores.get("banca", 0)
+            if banca_score > banca_max_score:
+                regolamento_score = scores.get("regolamento", 0)
+                regolamento_tmpl = next((t for t in _TEMPLATES if t["id"] == "regolamento"), None)
+                reg_threshold = regolamento_tmpl.get("threshold", 0) if regolamento_tmpl else 0
+                if regolamento_score >= reg_threshold:
+                    print(
+                        f"[INFO] banca score ({banca_score}) exceeds max_score ({banca_max_score}) "
+                        f"and formal 'Articolo N' numbering found in body "
+                        f"(regolamento score={regolamento_score} ≥ threshold={reg_threshold}) "
+                        f"→ overriding banca → regolamento"
+                    )
+                    best_type = "regolamento"
         return best_type
 
     # ── C: Fallback heuristics ────────────────────────────────────────────

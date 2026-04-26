@@ -1,3 +1,4 @@
+
 """
 SunnitAI pipeline test script.
 
@@ -253,7 +254,10 @@ async def main(args: argparse.Namespace) -> None:
     file_name = pdf_path.name
     doc_name = pdf_path.stem
     pdf_path_str = str(pdf_path)
-    out_dir = pdf_path.parent
+
+    # ── Output directory: test_results/<doc_name>/ ─────────────────────────────
+    out_dir = _ROOT / "test_results" / doc_name
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"\n{'═' * 60}")
     print(f"  SunnitAI pipeline test")
@@ -261,14 +265,14 @@ async def main(args: argparse.Namespace) -> None:
     print(f"  Skip LLM: {args.skip_llm}")
     if args.template:
         print(f"  Template hint: {args.template}")
+    print(f"  Output  : {out_dir}")
     print(f"{'═' * 60}")
 
     doc_hash = _sha256(pdf_path)
 
     # ── Parse ──────────────────────────────────────────────────────────────────
     articoli, profile_info = step_parse(pdf_path_str, file_name, args.template)
-    _save_json({"profile": profile_info, "articoli": articoli},
-               out_dir / f"{doc_name}_parse.json")
+    _save_json({"profile": profile_info, "articoli": articoli}, out_dir / "parse.json")
 
     if args.skip_llm:
         # Parse-only path: build lightweight graph directly from articoli
@@ -280,19 +284,18 @@ async def main(args: argparse.Namespace) -> None:
         # ── Full LLM pipeline ──────────────────────────────────────────────────
         try:
             raw, consolidated = await step_analisi(pdf_path_str, file_name)
-            _save_json({"raw": raw, "consolidated": consolidated},
-                       out_dir / f"{doc_name}_analisi.json")
+            _save_json({"raw": raw, "consolidated": consolidated}, out_dir / "analisi.json")
         except Exception as exc:
             logger.error("Analisi failed: %s", exc)
             print("\n  LLM call failed. Re-run with --skip-llm to test parse + Neo4J only.")
             sys.exit(1)
 
         flattened = step_flatten(consolidated)
-        _save_json(flattened, out_dir / f"{doc_name}_flat.json")
+        _save_json(flattened, out_dir / "flat.json")
 
         payload = step_build_graph(flattened, doc_name, file_name, doc_hash, pdf_path_str)
 
-    _save_json(payload, out_dir / f"{doc_name}_graph.json")
+    _save_json(payload, out_dir / "graph.json")
 
     # ── Neo4J ──────────────────────────────────────────────────────────────────
     nodes_written, rels_written = step_neo4j(payload)
