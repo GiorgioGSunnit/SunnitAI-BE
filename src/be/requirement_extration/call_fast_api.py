@@ -3785,3 +3785,123 @@ async def ingest_document(
         "status": "pending",
         "statusQueryGetUri": f"/api/job/{job_id}",
     }
+
+
+# ── POST /api/document/process (async: full pipeline → Neo4J) ─────────────────
+
+def _run_process_job(job_id: str, pdf_bytes: bytes, file_name: str, template_hint: Optional[str]) -> None:
+    """
+    Full watcher-equivalent pipeline exposed as an API:
+      parse → analisi (LLM) → consolida_analisi → flatten → Neo4J write
+    """
+    import tempfile
+    import hashlib
+    tmp_path = None
+    try:
+        # ── Step 1: parse ──────────────────────────────────────────────────────
+        _job_set(job_id, "running", step="parsing")
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            tmp.write(pdf_bytes)
+            tmp_path = tmp.name
+
+        profile = profile_document(tmp_path, file_name, template_hint=template_hint)
+        articoli = lex_parse(tmp_path, file_name, template_hint=template_hint)
+        n_commi = sum(len(a.get("commi", [])) for a in articoli)
+        n_sottocommi = sum(
+            len(c.get("sottocommi", []))
+            for a in articoli
+            for c in a.get("commi", [])
+        )
+
+        # ── Step 2: analisi (LLM) ──────────────────────────────────────────────
+        _job_set(job_id, "running", step="analisi")
+        from lex_package.analisi import analisi as lex_analisi, consolida_analisi
+        raw = asyncio.run(lex_analisi(tmp_path, file_name))
+        consolidated = asyncio.run(consolida_analisi(raw))
+
+        # ── Step 3: flatten ────────────────────────────────────────────────────
+        _job_set(job_id, "running", step="flatten")
+        from lex_package.utils.flatten import flatten_analisi_invertito, build_neo4j_graph_payload
+        flattened = flatten_analisi_invertito(consolidated)
+
+        # ── Step 4: build graph payload ────────────────────────────────────────
+        _job_set(job_id, "running", step="build_graph")
+        doc_hash = hashlib.sha256(pdf_bytes).hexdigest()
+        doc_name = Path(file_name).stem
+        payload = build_neo4j_graph_payload(
+            flattened,
+            document_name=doc_name,
+            document_hash=doc_hash,
+            file_name=file_name,
+            pdf_path=tmp_path,
+        )
+
+        # ── Step 5: Neo4J write ────────────────────────────────────────────────
+        _job_set(job_id, "running", step="neo4j_write")
+        from lex_package.utils.graph_writer import is_configured, write_graph_payload
+        nodes_written, rels_written = 0, 0
+        neo4j_skipped = not is_configured()
+        if not neo4j_skipped:
+            nodes_written, rels_written = write_graph_payload(payload)
+
+        _job_set(
+            job_id,
+            "completed",
+            result={
+                "document_name": file_name,
+                "template_used": profile.template_meta.get("id", ""),
+                "template_label": profile.template_meta.get("label", ""),
+                "confidence": profile.confidence,
+                "parse_stats": {
+                    "articoli": len(articoli),
+                    "commi": n_commi,
+                    "sottocommi": n_sottocommi,
+                },
+                "graph_stats": {
+                    "nodes": len(payload.get("nodes", [])),
+                    "relationships": len(payload.get("relationships", [])),
+                },
+                "neo4j": {
+                    "skipped": neo4j_skipped,
+                    "nodes_written": nodes_written,
+                    "relationships_written": rels_written,
+                },
+            },
+        )
+    except Exception as exc:
+        logger.exception("[process_job] %s failed: %s", job_id, exc)
+        _job_set(job_id, "failed", error=str(exc))
+    finally:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
+
+@app.post("/api/document/process", status_code=202, tags=["Parse"])
+async def process_document(
+    file: UploadFile = File(...),
+    template_hint: Optional[str] = Query(default=None, description="Override template selection (e.g. 'banca', 'regolamento')"),
+):
+    """
+    Full pipeline: parse → LLM analysis → flatten → Neo4J write.
+
+    This is the API equivalent of the watcher service. Use this to ingest a
+    document end-to-end and write its graph representation to Neo4J.
+
+    Returns 202 with a `job_id`. Poll `GET /api/job/{job_id}` for progress.
+    The `step` field shows the current stage:
+      parsing → analisi → flatten → build_graph → neo4j_write → completed
+
+    The final result contains parse_stats, graph_stats, and neo4j write counts.
+    """
+    pdf_bytes = await file.read()
+    job_id = str(uuid.uuid4())
+    _job_set(job_id, "pending")
+    _job_executor.submit(_run_process_job, job_id, pdf_bytes, file.filename or "document.pdf", template_hint)
+    return {
+        "job_id": job_id,
+        "status": "pending",
+        "statusQueryGetUri": f"/api/job/{job_id}",
+    }
