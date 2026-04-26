@@ -1,18 +1,12 @@
 {
   "IsEncrypted": false,
   "Values": {
-    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
-    "FUNCTIONS_WORKER_RUNTIME": "python",
-    "AzureWebJobsFeatureFlags": "EnableWorkerIndexing",
-    "CONNECTION_STRING": "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;QueueEndpoint=http://127.0.0.1:10001/devstoreaccount1;TableEndpoint=http://127.0.0.1:10002/devstoreaccount1;",
-    "AZURE_OPENAI_API_KEY": "",
-    "AZURE_OPENAI_ENDPOINT": "https://cdpaistudioservices.openai.azure.com/",
-    "AZURE_API_VERSION": "2024-08-01-preview",
+    "LLM_BASE_URL": "https://<runpod-or-server>/v1",
+    "LLM_API_KEY": "<your-api-key>",
+    "LLM_MODEL": "nemotron-2-30B-A3B",
+    "LOCAL_STORAGE_PATH": "/opt/sunnitai-be/storage",
+    "CONTAINER_NAME_EXT": "cdp-ext",
     "IPVMAI": "localhost",
-    "IPVMNER": "52.143.143.241",
-    "APPLICATIONINSIGHTS_CONNECTION_STRING": "InstrumentationKey=f878d7d2-d3b3-4228-97bc-2b630f8cdcbc;IngestionEndpoint=https://francecentral-1.in.applicationinsights.azure.com/;LiveEndpoint=https://francecentral.livediagnostics.monitor.azure.com/;ApplicationId=55651381-b390-4875-8c36-3d833e4c6e73",
-    "APPLICATIONINSIGHTS_ROLE_NAME": "Document-Comparison-API",
-    "ApplicationInsightsAgent_EXTENSION_VERSION": "~3",
-    "APPLICATIONINSIGHTS_SAMPLING_PERCENTAGE": "60"
+    "IPVMNER": "52.143.143.241"
   }
 }

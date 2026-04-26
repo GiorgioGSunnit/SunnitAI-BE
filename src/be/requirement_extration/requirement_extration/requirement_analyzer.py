@@ -12,13 +12,11 @@ import re
 from dotenv import load_dotenv
 import os
 import time
-import tiktoken
 import fitz  # PyMuPDF
 import unicodedata
 import asyncio
 import shutil  # Added for file copying
 
-# from azure.core.exceptions import AzureError
 import aiofiles
 from collections import deque
 import hashlib
@@ -124,23 +122,27 @@ def process_single_requirement(data: Tuple[Dict, List[str], int]) -> Dict:
 
 
 class RequirementAnalyzer:
-    def __init__(self, backend: str = "azure_openai", azure_config: Dict = None):
+    def __init__(self, backend: str = "openai", llm_config: Dict = None):
         self.backend = backend
-        self.azure_config = azure_config
-        if self.backend == "azure_openai" and azure_config:
-            self.azure_client = self._init_azure_client()
+        self.llm_config = llm_config or {}
+        if self.backend == "openai":
+            self.llm_client = self._init_llm_client()
         logger.info(f"RequirementAnalyzer inizializzato con backend '{self.backend}'")
 
-    def _init_azure_client(self):
+    def _init_llm_client(self):
         """
-        Inizializza il client Azure OpenAI.
+        Inizializza il client OpenAI-compatible (funziona con nemotron su RunPod/vLLM).
         """
-        from openai import AsyncAzureOpenAI
-        import httpx
+        from openai import AsyncOpenAI
+        import os
 
-        custom_httpx_client = httpx.AsyncClient(proxy=None)
-        self.azure_config["http_client"] = custom_httpx_client
-        return AsyncAzureOpenAI(**self.azure_config)
+        api_key = self.llm_config.get("api_key") or os.getenv("LLM_API_KEY", os.getenv("OPENAI_API_KEY", "EMPTY"))
+        base_url = self.llm_config.get("base_url") or os.getenv("LLM_BASE_URL")
+
+        client_kwargs = {"api_key": api_key}
+        if base_url:
+            client_kwargs["base_url"] = base_url
+        return AsyncOpenAI(**client_kwargs)
 
     def safe_string_handling(self, input_data):
         if isinstance(input_data, bytes):
@@ -173,25 +175,17 @@ class RequirementAnalyzer:
     def _split_into_chunks(
         self,
         text: str,
-        chunk_size: int = 1500,
-        overlap: int = 250,
-        model: str = "gpt-4-32k",
+        chunk_size: int = 6000,
+        overlap: int = 1000,
+        model: str = "",  # unused — kept for backward compatibility
     ) -> List[str]:
-        tokenizer = tiktoken.encoding_for_model(model)
-        tokens = tokenizer.encode(text)
-        chunks = []
-
-        start_positions = list(range(0, len(tokens), chunk_size - overlap))
-
-        for start_idx in start_positions:
-            end_idx = min(start_idx + chunk_size, len(tokens))
-            chunk_tokens = tokens[start_idx:end_idx]
-            chunk_text = tokenizer.decode(chunk_tokens)
-            chunks.append(chunk_text)
-
-            if end_idx >= len(tokens):
-                break
-
+        from langchain.text_splitter import RecursiveCharacterTextSplitter
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=chunk_size,
+            chunk_overlap=overlap,
+            separators=["\n\n", "\n", " ", ""],
+        )
+        chunks = splitter.split_text(text)
         logger.info(f"Testo diviso in {len(chunks)} chunks")
         return chunks
 
@@ -213,8 +207,10 @@ class RequirementAnalyzer:
 
                 final_prompt = prompt_template.format(document=chunk)
 
+                import os as _os
+                _model = _os.getenv("LLM_MODEL", "nemotron-2-30B-A3B")
                 response = (
-                    await self.azure_client.chat.completions.with_raw_response.create(
+                    await self.llm_client.chat.completions.with_raw_response.create(
                         messages=[
                             {
                                 "role": "system",
@@ -222,7 +218,7 @@ class RequirementAnalyzer:
                             },
                             {"role": "user", "content": final_prompt},
                         ],
-                        model="gpt-4-32k",
+                        model=_model,
                         temperature=0,
                         max_tokens=8000,
                     )
@@ -521,10 +517,7 @@ class RequirementAnalyzer:
         Prefer using analyze_text_async directly.
         """
         log_prefix = f"[Run ID: {run_id}] " if run_id else ""
-        model = "gpt-4-32k"
-        chunks = self._split_into_chunks(
-            text, chunk_size=1500, overlap=250, model=model
-        )
+        chunks = self._split_into_chunks(text, chunk_size=1500, overlap=250)
         logger.info(
             f"{log_prefix}Avvio elaborazione (sync wrapper) GPT su {len(chunks)} chunks."
         )
@@ -620,11 +613,8 @@ class RequirementAnalyzer:
                     },
                 )
             return result
-        elif self.backend == "azure_openai":
-            model = "gpt-4-32k"
-            chunks = self._split_into_chunks(
-                text, chunk_size=1500, overlap=250, model=model
-            )
+        elif self.backend == "openai":
+            chunks = self._split_into_chunks(text, chunk_size=1500, overlap=250)
             logger.info(
                 f"{log_prefix}Avvio elaborazione asincrona OpenAI su {len(chunks)} chunks."
             )
@@ -678,9 +668,9 @@ class RequirementAnalyzer:
                     },
                 )
             return result
-        elif self.backend == "azure_openai":
+        elif self.backend == "openai":
             logger.warning(
-                f"{log_prefix}Synchronous analyze_text called for azure_openai. Progress callback WILL be passed to _analyze_with_gpt wrapper."
+                f"{log_prefix}Synchronous analyze_text called. Progress callback WILL be passed to _analyze_with_gpt wrapper."
             )
             return self._analyze_with_gpt(
                 text, offsets, run_id=run_id, progress_callback=progress_callback
@@ -847,19 +837,19 @@ if __name__ == "__main__":
     parser.add_argument(
         "--backend",
         type=str,
-        choices=["bert", "azure_openai"],
-        default="azure_openai",
-        help="Backend to use for analysis ('bert' or 'azure_openai')",
+        choices=["bert", "openai"],
+        default="openai",
+        help="Backend to use for analysis ('bert' or 'openai')",
     )
     parser.add_argument(
-        "--azure_api_key",
+        "--llm_api_key",
         type=str,
-        help="Azure OpenAI API key (optional, otherwise read from .env)",
+        help="LLM API key (optional, otherwise read from LLM_API_KEY env var)",
     )
     parser.add_argument(
-        "--azure_endpoint",
+        "--llm_endpoint",
         type=str,
-        help="Azure OpenAI endpoint (optional, otherwise read from .env)",
+        help="LLM base URL (optional, otherwise read from LLM_BASE_URL env var)",
     )
 
     args = parser.parse_args()
@@ -920,24 +910,13 @@ if __name__ == "__main__":
     #     # print(json.dumps(dsta, indent=2, ensure_ascii=False))\
     #     exit(0)
 
-    azure_config = None
-    if args.backend == "azure_openai":
-        azure_api_key = os.environ.get("AZURE_OPENAI_API_KEY")
-        azure_endpoint = os.environ.get(
-            "AZURE_OPENAI_ENDPOINT", "https://cdpaistudioservices.openai.azure.com"
-        )
-        azure_api_version = os.environ.get("AZURE_API_VERSION", "2024-08-01-preview")
-        if not azure_api_key or not azure_endpoint:
-            raise ValueError(
-                "Azure API key and endpoint are required to use Azure OpenAI."
-            )
-        azure_config = {
-            "api_key": azure_api_key,
-            "azure_endpoint": azure_endpoint,
-            "api_version": azure_api_version,
-        }
+    llm_config = {}
+    if args.backend == "openai":
+        llm_api_key = args.llm_api_key or os.environ.get("LLM_API_KEY", os.environ.get("OPENAI_API_KEY", "EMPTY"))
+        llm_endpoint = args.llm_endpoint or os.environ.get("LLM_BASE_URL")
+        llm_config = {"api_key": llm_api_key, "base_url": llm_endpoint}
 
-    analyzer = RequirementAnalyzer(backend=args.backend, azure_config=azure_config)
+    analyzer = RequirementAnalyzer(backend=args.backend, llm_config=llm_config)
 
     try:
         logger.info(f"Processing PDF file: {args.input_data}")

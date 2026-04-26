@@ -6,11 +6,10 @@ _app_src = Path("/app/src")
 if _app_src.exists() and str(_app_src) not in sys.path:
     sys.path.insert(0, str(_app_src))
 
-# Bootstrap: carica credenziali da Azure Key Vault PRIMA di qualsiasi os.getenv()
 try:
     import core.bootstrap  # noqa: F401 - side effect import
 except ImportError:
-    pass  # In ambiente locale senza core/, usa .env
+    pass
 
 import base64
 import threading
@@ -20,13 +19,8 @@ from fastapi import FastAPI, Response, UploadFile, File, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 from requirement_extraction import RequirementExtractor
-try:
-    from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient
-    from azure.core.exceptions import ResourceExistsError, ResourceNotFoundError
-except ImportError:
-    BlobServiceClient = BlobClient = ContainerClient = None  # type: ignore
-    ResourceExistsError = FileExistsError  # type: ignore
-    ResourceNotFoundError = FileNotFoundError  # type: ignore
+ResourceExistsError = FileExistsError
+ResourceNotFoundError = FileNotFoundError
 import logging
 from dotenv import load_dotenv
 import shutil
@@ -44,7 +38,6 @@ from typing import Dict, Any, Optional, Union, Tuple, Callable, List
 from datetime import datetime, timezone, timedelta
 from pydantic import BaseModel
 import markdown2
-import tiktoken
 from extration_utils import (
     compute_file_hash,
     get_python_path,
@@ -90,9 +83,11 @@ from lex_package.utils.normalize_articoli_tree import (
     ensure_identificativo_fields_for_confronto,
     normalizza_gerarchia_articoli,
 )
+from lex_package.parse import parse as lex_parse
+from lex_package.parsing_utils.document_profiler import profile_document
+from lex_package.utils.metadata_extraction import extract_document_metadata
 
 # Import the search module (now with proper naming)
-from searchAI_fulltext import EnhancedSearchService
 
 load_dotenv()
 
@@ -127,13 +122,6 @@ logging.getLogger("lex_package.analisi").setLevel(logging.DEBUG)
 logger = logging.getLogger(__name__)
 logger.info("FastAPI application starting with centralized logging.")
 
-# Set env vars only if they exist (avoid TypeError on None)
-if os.getenv("SEARCH_KEY"):
-    os.environ["SEARCH_KEY"] = os.getenv("SEARCH_KEY")
-if os.getenv("TRANSLATOR_KEY"):
-    os.environ["TRANSLATOR_KEY"] = os.getenv("TRANSLATOR_KEY")
-if os.getenv("TRANSLATOR_LOCATION"):
-    os.environ["TRANSLATOR_LOCATION"] = os.getenv("TRANSLATOR_LOCATION")
 
 # Blob service via blob_storage_client (Managed Identity)
 try:
@@ -170,10 +158,27 @@ async def health_check():
         "hot_reload_test": "v1",  # TEST: remove after verifying hot-reload works
         "checks": {
             "blob_storage": blob_service is not None and container_client is not None,
-            "openai_configured": bool(os.getenv("AZURE_OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")),
+            "openai_configured": bool(os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY")),
         }
     }
     return health_status
+
+
+# ── Simple job store for parse / ingest endpoints ─────────────────────────────
+# { job_id: {"status": "running"|"completed"|"failed", "result": ..., "error": ...} }
+_jobs: Dict[str, Dict[str, Any]] = {}
+_jobs_lock = threading.Lock()
+_job_executor = ThreadPoolExecutor(max_workers=4)
+
+
+def _job_set(job_id: str, status: str, **kwargs) -> None:
+    with _jobs_lock:
+        _jobs[job_id] = {"status": status, "updated_at": datetime.now(timezone.utc).isoformat(), **kwargs}
+
+
+def _job_get(job_id: str) -> Optional[Dict[str, Any]]:
+    with _jobs_lock:
+        return _jobs.get(job_id)
 
 
 # Global store for analysis progress
@@ -567,13 +572,12 @@ async def compare_requirements(
 
     try:
         # Initialize analyzer for direct calls
-        azure_config = {
-            "api_key": os.getenv("AZURE_OPENAI_API_KEY"),
-            "azure_endpoint": os.getenv("AZURE_OPENAI_ENDPOINT"),
-            "api_version": os.getenv("AZURE_API_VERSION", "2024-08-01-preview"),
+        llm_config = {
+            "api_key": os.getenv("LLM_API_KEY", os.getenv("OPENAI_API_KEY", "EMPTY")),
+            "base_url": os.getenv("LLM_BASE_URL"),
         }
         analyzer = RequirementAnalyzer(
-            backend="azure_openai", azure_config=azure_config
+            backend="openai", llm_config=llm_config
         )
 
         # Check both JSON files exist, if not extract them
@@ -1930,54 +1934,31 @@ class SearchRequest(BaseModel):
     # search_fields: list[str] = ["organizations", "people", "content", "keyphrases"] #"text_vector"
 
 
+# TODO: Search replacement needed if this endpoint is re-enabled.
+#
+# How it worked before:
+#   - chunk_indexer.py was run as a standalone script to chunk extracted JSON results
+#     and push them to Azure Cognitive Search.
+#   - This endpoint queried Azure Search to find relevant chunks across all indexed docs.
+#
+# How to replace it:
+#   1. On each /extract-requirements/ completion, chunk the output JSON and store
+#      chunks locally (e.g. as FAISS index or in pgvector if Postgres is available).
+#   2. Replace search_documents below with a query against that local index.
+#   3. searchAI_fulltext.py → EnhancedSearchService has the original query logic
+#      (stopword removal, field selection, scoring) that can be ported.
+#
+# Document processing (extraction, comparison, local storage) is fully working —
+# only the cross-document search layer is missing.
 @app.post("/search", response_model=dict)
 async def search_documents(request: SearchRequest):
-    logger.info(
-        f"Richiesta ricerca: {request.search_text} con from_analysis = {request.from_analysis}"
+    # Azure Search has been removed. Full-text search is not available.
+    # See TODO above for how to re-implement with a local search backend.
+    logger.warning("POST /search called but Azure Search has been removed — returning 503.")
+    raise HTTPException(
+        status_code=503,
+        detail="Full-text search is not available: Azure Search has been removed.",
     )
-    try:
-        output_dir = "./output_internal"
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
-            logger.info(f"Creato output_internal in {output_dir}")
-
-        output_filename = "output_search.json"
-        output_file_path = Path(os.path.join(output_dir, output_filename))
-        logger.info(f"Output search file: {output_file_path}")
-
-        # Direct call to the EnhancedSearchService class
-        search_service = EnhancedSearchService(
-            endpoint="https://cdpaisearch.search.windows.net",
-            index_name="azureblob-index-cdpai2",
-            api_key=os.getenv("SEARCH_KEY"),
-        )
-
-        # Determine if from_analysis should be used
-        from_analysis = (
-            hasattr(request, "from_analysis") and request.from_analysis == "1"
-        )
-        if from_analysis:
-            logger.info("Entro in modalità from_analysis 1")
-
-        # Call the search function directly
-        results = search_service.search_documents(
-            search_text=request.search_text,
-            top=request.top,
-            from_analysis=from_analysis,
-        )
-
-        # Save the results to a file for persistence
-        with open(output_file_path, "w", encoding="utf-8") as f:
-            json.dump(results, f, ensure_ascii=False, indent=4)
-
-        logger.info("Ricerca completata correttamente.")
-        return results
-
-    except Exception as e:
-        logger.exception("Errore durante la ricerca:")
-        raise HTTPException(
-            status_code=500, detail=f"An unexpected error occurred: {str(e)}"
-        )
 
 
 @app.get("/download-excel")
@@ -2465,14 +2446,14 @@ def calculate_seconds_between(
 
 def get_blob_client_for_sum_data(
     connection_string: str, container: str, blob_name: str
-) -> BlobClient:
-    """Helper to get a BlobClient for sum_data via bsc (Managed Identity)."""
+):
+    """Helper to get a local BlobClient for sum_data."""
     return bsc.get_blob_client(f"{container}/{blob_name}")
 
 
-def ensure_sum_blob(connection_string: str = None) -> BlobClient:
+def ensure_sum_blob(connection_string: str = None):
     """
-    Returns the BlobClient for sum.json in the configured container.
+    Returns the local BlobClient for sum.json in the configured container.
     If the file does not exist, it creates it with default values.
     """
     blob_client = get_blob_client_for_sum_data(
@@ -2506,16 +2487,9 @@ def ensure_sum_blob(connection_string: str = None) -> BlobClient:
 
 def get_tokens(
     text: str,
-) -> List[int]:  # Matches function_app.py signature, returns list of tokens
-    """Encodes text to tokens using gpt-4-32k tokenizer."""
-    try:
-        tokenizer = tiktoken.encoding_for_model(
-            "gpt-4-32k"
-        )  # As per function_app, though gpt-4o was mentioned elsewhere
-        return tokenizer.encode(text)
-    except Exception as e:
-        logger.error(f"Error getting tokens: {e}")
-        return []  # Return empty list on error
+) -> range:
+    """Approssima il conteggio token (1 token ≈ 4 caratteri). Supporta len()."""
+    return range(len(text) // 4)
 
 
 def update_sum_data(
@@ -3095,13 +3069,12 @@ async def extract_requirements(file: UploadFile = File(...)):
 
         else:  # Fallback to old RequirementAnalyzer
             logger.info(f"{log_prefix}Using old RequirementAnalyzer.")
-            azure_config = {
-                "api_key": os.getenv("AZURE_OPENAI_API_KEY"),
-                "azure_endpoint": os.getenv("AZURE_OPENAI_ENDPOINT"),
-                "api_version": os.getenv("AZURE_API_VERSION", "2024-08-01-preview"),
+            llm_config = {
+                "api_key": os.getenv("LLM_API_KEY", os.getenv("OPENAI_API_KEY", "EMPTY")),
+                "base_url": os.getenv("LLM_BASE_URL"),
             }
             analyzer = RequirementAnalyzer(
-                backend="azure_openai", azure_config=azure_config
+                backend="openai", llm_config=llm_config
             )
             text_content_for_sum_data, offsets = (
                 analyzer.extract_text_with_page_mapping(str(temp_file_path))
@@ -3595,4 +3568,220 @@ async def delete_files(request: DeleteFilesRequest):
         "deletedFiles": list(set(deleted_files)),  # Remove duplicates
         "failedFiles": failed_files,
         "message": f"Deleted {len(set(deleted_files))} files",
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ── Parse / Metadata / Ingest endpoints (for FE on port 2025) ─────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ── GET /api/job/{job_id} ──────────────────────────────────────────────────────
+
+@app.get("/api/job/{job_id}", tags=["Jobs"])
+async def get_job_status(job_id: str):
+    """Poll the status of an async job started by /api/parse or /api/document/ingest."""
+    job = _job_get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
+    return job
+
+
+# ── POST /api/parse (async) ───────────────────────────────────────────────────
+
+def _run_parse_job(job_id: str, pdf_bytes: bytes, file_name: str, template_hint: Optional[str]) -> None:
+    import tempfile
+    tmp_path = None
+    try:
+        _job_set(job_id, "running", step="parsing")
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            tmp.write(pdf_bytes)
+            tmp_path = tmp.name
+
+        # Profile first (fast, no LLM) to capture template metadata and scores
+        profile = profile_document(tmp_path, file_name, template_hint=template_hint)
+        template_meta = profile.template_meta
+
+        # parse() returns articoli list
+        articoli = lex_parse(tmp_path, file_name, template_hint=template_hint)
+
+        n_commi = sum(len(a.get("commi", [])) for a in articoli)
+        n_sottocommi = sum(
+            len(c.get("sottocommi", []))
+            for a in articoli
+            for c in a.get("commi", [])
+        )
+
+        _job_set(
+            job_id,
+            "completed",
+            result={
+                "document_name": file_name,
+                "template_used": template_meta.get("id", ""),
+                "template_label": template_meta.get("label", ""),
+                "confidence": profile.confidence,
+                "scores": profile.scores,
+                "articoli": articoli,
+                "stats": {
+                    "articoli": len(articoli),
+                    "commi": n_commi,
+                    "sottocommi": n_sottocommi,
+                },
+            },
+        )
+    except Exception as exc:
+        logger.exception("[parse_job] %s failed: %s", job_id, exc)
+        _job_set(job_id, "failed", error=str(exc))
+    finally:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
+
+@app.post("/api/parse", status_code=202, tags=["Parse"])
+async def parse_document(
+    file: UploadFile = File(...),
+    template_hint: Optional[str] = Query(default=None, description="Override template selection (e.g. 'banca', 'regolamento')"),
+):
+    """
+    Trigger async PDF parsing.
+
+    Returns 202 with a `job_id`. Poll `GET /api/job/{job_id}` until
+    `status` is `"completed"` or `"failed"`.
+    """
+    pdf_bytes = await file.read()
+    job_id = str(uuid.uuid4())
+    _job_set(job_id, "pending")
+    _job_executor.submit(_run_parse_job, job_id, pdf_bytes, file.filename or "document.pdf", template_hint)
+    return {
+        "job_id": job_id,
+        "status": "pending",
+        "statusQueryGetUri": f"/api/job/{job_id}",
+    }
+
+
+# ── POST /api/metadata (sync) ─────────────────────────────────────────────────
+
+@app.post("/api/metadata", tags=["Parse"])
+async def extract_metadata(file: UploadFile = File(...)):
+    """
+    Synchronously extract structured metadata from a PDF (first ~4 pages).
+
+    Returns 200 with `{document_name, document_number, issue_date, editor_enterprises}`.
+    Returns 503 if the LLM is unavailable or returns no result.
+    """
+    import tempfile
+    pdf_bytes = await file.read()
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            tmp.write(pdf_bytes)
+            tmp_path = tmp.name
+
+        file_name = file.filename or "document.pdf"
+        loop = asyncio.get_event_loop()
+        metadata = await loop.run_in_executor(
+            None,
+            lambda: extract_document_metadata(tmp_path, file_name),
+        )
+
+        if metadata is None:
+            raise HTTPException(
+                status_code=503,
+                detail="LLM unavailable or returned no result — retry later",
+            )
+
+        return metadata.model_dump() if hasattr(metadata, "model_dump") else vars(metadata)
+    finally:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
+
+# ── POST /api/document/ingest (async: parse + metadata) ───────────────────────
+
+def _run_ingest_job(job_id: str, pdf_bytes: bytes, file_name: str, template_hint: Optional[str]) -> None:
+    import tempfile
+    tmp_path = None
+    try:
+        _job_set(job_id, "running", step="parsing")
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            tmp.write(pdf_bytes)
+            tmp_path = tmp.name
+
+        # Step 1 — profile (fast, no LLM) then parse
+        profile = profile_document(tmp_path, file_name, template_hint=template_hint)
+        template_meta = profile.template_meta
+        articoli = lex_parse(tmp_path, file_name, template_hint=template_hint)
+        n_commi = sum(len(a.get("commi", [])) for a in articoli)
+        n_sottocommi = sum(
+            len(c.get("sottocommi", []))
+            for a in articoli
+            for c in a.get("commi", [])
+        )
+
+        _job_set(job_id, "running", step="metadata_extraction")
+
+        # Step 2 — metadata (LLM call)
+        try:
+            metadata = extract_document_metadata(tmp_path, file_name)
+            metadata_dict = metadata.model_dump() if metadata and hasattr(metadata, "model_dump") else (vars(metadata) if metadata else None)
+        except Exception as exc:
+            logger.warning("[ingest_job] metadata extraction failed for %s: %s", job_id, exc)
+            metadata_dict = None
+
+        _job_set(
+            job_id,
+            "completed",
+            result={
+                "parse": {
+                    "document_name": file_name,
+                    "template_used": template_meta.get("id", ""),
+                    "template_label": template_meta.get("label", ""),
+                    "confidence": profile.confidence,
+                    "scores": profile.scores,
+                    "articoli": articoli,
+                    "stats": {
+                        "articoli": len(articoli),
+                        "commi": n_commi,
+                        "sottocommi": n_sottocommi,
+                    },
+                },
+                "metadata": metadata_dict,
+            },
+        )
+    except Exception as exc:
+        logger.exception("[ingest_job] %s failed: %s", job_id, exc)
+        _job_set(job_id, "failed", error=str(exc))
+    finally:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
+
+@app.post("/api/document/ingest", status_code=202, tags=["Parse"])
+async def ingest_document(
+    file: UploadFile = File(...),
+    template_hint: Optional[str] = Query(default=None, description="Override template selection (e.g. 'banca', 'regolamento')"),
+):
+    """
+    Trigger async document ingestion: parse + metadata extraction.
+
+    Returns 202 with a `job_id`. Poll `GET /api/job/{job_id}` until
+    `status` is `"completed"` or `"failed"`.
+    The result contains `parse` (articoli tree + stats) and `metadata` (LLM-extracted fields).
+    """
+    pdf_bytes = await file.read()
+    job_id = str(uuid.uuid4())
+    _job_set(job_id, "pending")
+    _job_executor.submit(_run_ingest_job, job_id, pdf_bytes, file.filename or "document.pdf", template_hint)
+    return {
+        "job_id": job_id,
+        "status": "pending",
+        "statusQueryGetUri": f"/api/job/{job_id}",
     }

@@ -4,6 +4,26 @@ metadata:
   name: ${APP_NAME}-configmap
   namespace: ${NAMESPACE}
 data:
-  # Required for bootstrap - Key Vault access
-  AZURE_KEY_VAULT_NAME: "${AKS_KV_NAME}"
-  AZURE_TENANT_ID: "${TENANT_ID}"
+  # ── LLM ───────────────────────────────────────────────────────────────────
+  LLM_BASE_URL: "${LLM_BASE_URL}"
+  LLM_MODEL: "nemotron-2-30B-A3B"
+
+  # ── Embeddings ─────────────────────────────────────────────────────────────
+  LLM_EMBEDDING_BASE_URL: "${LLM_EMBEDDING_BASE_URL}"
+  LLM_EMBEDDING_MODEL: "${LLM_EMBEDDING_MODEL}"
+
+  # ── Local storage (replaces Azure Blob) ────────────────────────────────────
+  LOCAL_STORAGE_PATH: "/opt/sunnitai-be/storage"
+  BLOB_CONTAINER_NAME: "cdp-ext"
+
+  # ── Filesystem watcher ────────────────────────────────────────────────────
+  WATCH_DIR: "/opt/sunnitai-be/inbox"
+  WATCHER_POLL_SECONDS: "10"
+
+  # ── Neo4J ──────────────────────────────────────────────────────────────────
+  NEO4J_URI: "${NEO4J_URI}"
+  NEO4J_USER: "neo4j"
+  NEO4J_DATABASE: "neo4j"
+
+  # ── App ────────────────────────────────────────────────────────────────────
+  NOTIFICATION_EMAIL: ""

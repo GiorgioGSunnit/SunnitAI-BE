@@ -32,12 +32,7 @@ from job_store import (
     set_running,
 )
 
-# azure.storage.blob is kept installed for legacy imports but actual storage
-# goes through blob_storage_client (local filesystem).
-try:
-    from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient
-except ImportError:
-    BlobServiceClient = BlobClient = ContainerClient = None  # type: ignore
+# Storage handled by local filesystem via blob_storage_client.py
 
 from utils import blob_storage_client as bsc
 from dotenv import load_dotenv
@@ -47,13 +42,9 @@ from pathlib import Path
 from typing import List, Dict
 import requests
 import base64
-import tiktoken
 from PyPDF2 import PdfReader
 from io import BytesIO
-try:
-    from azure.core.exceptions import ResourceNotFoundError
-except ImportError:
-    ResourceNotFoundError = FileNotFoundError  # type: ignore
+ResourceNotFoundError = FileNotFoundError
 import threading
 import tempfile
 import glob
@@ -65,22 +56,7 @@ import numpy as np
 from sklearn.linear_model import LinearRegression
 from urllib.parse import urlencode
 
-# Initialize Azure Monitor OpenTelemetry for Application Insights
-try:
-    from azure.monitor.opentelemetry import configure_azure_monitor
-
-    # Configure OpenTelemetry with Application Insights
-    # The connection string should be set in the APPLICATIONINSIGHTS_CONNECTION_STRING environment variable
-    configure_azure_monitor(
-        logger_name=__name__,  # Set logger name to avoid collecting logs from the SDK itself
-    )
-    logging.info("Azure Monitor OpenTelemetry configured successfully")
-except ImportError:
-    logging.warning(
-        "Azure Monitor OpenTelemetry package not found. Application Insights telemetry will not be collected."
-    )
-except Exception as e:
-    logging.warning(f"Failed to configure Azure Monitor OpenTelemetry: {str(e)}")
+# Monitoring: standard Python logging is used. Azure Monitor removed.
 
 DEBUG = False
 
@@ -3288,9 +3264,9 @@ def _blob_client(blob_path: str) -> BlobClient:
     return bsc.get_blob_client(blob_path)
 
 
-def get_tokens(text):
-    tokenizer = tiktoken.encoding_for_model("gpt-4-32k")
-    return tokenizer.encode(text)
+def get_tokens(text: str) -> range:
+    """Approximate token count — 1 token ≈ 4 characters."""
+    return range(len(text) // 4)
 
 
 def load_tokens_per_second() -> float:
@@ -3386,8 +3362,7 @@ def update_and_compute_tokens_per_second(token_count: int, actual_time: float) -
 
 def estimate_processing_time(text: str, tokens_per_second: float) -> dict:
     logging.info("====================estimate_processing_time====================")
-    enc = tiktoken.encoding_for_model("gpt-4o")
-    token_count = len(enc.encode(text))
+    token_count = len(text) // 4  # approximation: 1 token ≈ 4 characters
     estimated_time = round((token_count / tokens_per_second) * 1.2, 2)
     return {"token_count": token_count, "estimated_time_sec": estimated_time}
 
@@ -4061,27 +4036,17 @@ def track_metric_with_appinsights(name, value, properties=None):
 # Funzione per dividere il testo in chunks presa da requirements_analyzer
 def split_into_chunks(
     text: str,
-    chunk_size: int = 1500,
-    overlap: int = 250,
-    model: str = "gpt-4-32k",
+    chunk_size: int = 6000,
+    overlap: int = 1000,
+    model: str = "",  # unused — kept for backward compatibility
 ) -> List[str]:
-    tokenizer = tiktoken.encoding_for_model(model)
-    tokens = tokenizer.encode(text)
-    chunks = []
-
-    start_positions = list(range(0, len(tokens), chunk_size - overlap))
-
-    for start_idx in start_positions:
-        end_idx = min(start_idx + chunk_size, len(tokens))
-        chunk_tokens = tokens[start_idx:end_idx]
-        chunk_text = tokenizer.decode(chunk_tokens)
-        chunks.append(chunk_text)
-
-        if end_idx >= len(tokens):
-            break
-
-    logger.info(f"Testo diviso in {len(chunks)} chunks")
-    return chunks
+    from langchain.text_splitter import RecursiveCharacterTextSplitter
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=chunk_size,
+        chunk_overlap=overlap,
+        separators=["\n\n", "\n", " ", ""],
+    )
+    return splitter.split_text(text)
 
 
 @app.route(route="delete-files", methods=["DELETE"])
@@ -4120,4 +4085,374 @@ def delete_files(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps({"error": f"Error forwarding request to backend: {str(e)}"}),
             status_code=502,  # Bad Gateway
             mimetype="application/json",
+        )
+
+
+# =============================================================================
+# Document Parsing & Metadata Extraction API
+# =============================================================================
+
+# ── POST /api/parse ──────────────────────────────────────────────────────────
+
+def _run_parse_job(job_id: str, input_data: dict):
+    """Background job: parse a PDF and return the structured document tree."""
+    import asyncio
+    import os
+    import tempfile
+
+    try:
+        set_running(job_id, {"step": "parsing"})
+
+        file_content = base64.b64decode(input_data["file_content"])
+        file_name = input_data["filename"]
+        template_hint = input_data.get("template") or None
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            tmp.write(file_content)
+            tmp_path = tmp.name
+
+        try:
+            from lex_package.parse import parse
+
+            result = parse(tmp_path, file_name, template_hint=template_hint)
+        finally:
+            os.unlink(tmp_path)
+
+        # parse() returns a dict with articoli / parts / template_meta
+        if isinstance(result, dict):
+            articoli = result.get("articoli", [])
+            template_meta = result.get("template_meta", {})
+        else:
+            articoli = result
+            template_meta = {}
+
+        output = {
+            "document_name": os.path.splitext(file_name)[0],
+            "template_used": template_meta.get("id"),
+            "template_label": template_meta.get("label"),
+            "confidence": template_meta.get("confidence"),
+            "scores": template_meta.get("scores", {}),
+            "articoli": articoli,
+            "stats": {
+                "articoli": len(articoli),
+                "commi": sum(len(a.get("contenuto_parsato", [])) for a in articoli),
+                "sottocommi": sum(
+                    len(c.get("contenuto_parsato_2", []))
+                    for a in articoli
+                    for c in a.get("contenuto_parsato", [])
+                ),
+            },
+        }
+        set_completed(job_id, output)
+
+    except Exception as e:
+        logger.error(f"Parse job {job_id} error: {e}")
+        set_failed(job_id, str(e))
+
+
+@app.route(route="parse", methods=["POST"])
+def parse_document_client(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    POST /api/parse
+
+    Parses a PDF and returns the structured document tree (articoli, commi,
+    sottocommi). No LLM involved — fast.
+
+    Request (multipart/form-data):
+        file     PDF binary   required
+        template string       optional — force a specific parser:
+                              banca | regolamento | annex_tabular | boe | gazzetta_ue
+
+    Response 202:
+        { "id": "<job_id>", "statusQueryGetUri": "/api/job/<job_id>", "status": "Pending", "data": {...} }
+
+    Poll GET /api/job/<job_id> until runtimeStatus == "Completed".
+    Result shape:
+        {
+          "document_name": "...",
+          "template_used": "banca",
+          "template_label": "Banca d'Italia – Disposizioni di Vigilanza",
+          "confidence": 1.0,
+          "scores": { "banca": 8, ... },
+          "articoli": [...],
+          "stats": { "articoli": 31, "commi": 34, "sottocommi": 34 }
+        }
+    """
+    try:
+        file = req.files.get("file")
+        if not file:
+            return func.HttpResponse(
+                json.dumps({"error": "No file provided"}),
+                status_code=400,
+                mimetype="application/json",
+            )
+
+        content = file.stream.read()
+        input_data = {
+            "filename": file.filename,
+            "file_content": base64.b64encode(content).decode("utf-8"),
+            "template": req.form.get("template"),
+        }
+
+        job_id = create_job("parse", "Pending")
+        _job_executor.submit(_run_parse_job, job_id, input_data)
+
+        return func.HttpResponse(
+            body=json.dumps({
+                "id": job_id,
+                "statusQueryGetUri": f"/api/job/{job_id}",
+                "status": "Pending",
+                "data": {"filename": file.filename},
+            }),
+            status_code=202,
+            mimetype="application/json",
+        )
+
+    except Exception as e:
+        logger.error(f"parse_document_client error: {e}")
+        return func.HttpResponse(
+            json.dumps({"error": str(e)}), status_code=500, mimetype="application/json"
+        )
+
+
+# ── POST /api/metadata ───────────────────────────────────────────────────────
+
+@app.route(route="metadata", methods=["POST"])
+def extract_metadata_client(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    POST /api/metadata
+
+    Extracts structured metadata from the first pages of a PDF via LLM.
+    Synchronous — typically completes in 3–8 seconds.
+
+    Request (multipart/form-data):
+        file     PDF binary   required
+
+    Response 200:
+        {
+          "document_name": "DISPOSIZIONI IN MATERIA DI ADEGUATA VERIFICA...",
+          "document_number": null,
+          "issue_date": "2019-07-30",
+          "editor_enterprises": [
+            { "name": "Banca d'Italia", "role": "author" }
+          ]
+        }
+
+    Response 503: LLM unreachable or PDF unreadable.
+    """
+    import os
+    import tempfile
+
+    try:
+        file = req.files.get("file")
+        if not file:
+            return func.HttpResponse(
+                json.dumps({"error": "No file provided"}),
+                status_code=400,
+                mimetype="application/json",
+            )
+
+        content = file.stream.read()
+        file_name = file.filename
+        doc_name = os.path.splitext(file_name)[0]
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            tmp.write(content)
+            tmp_path = tmp.name
+
+        try:
+            from lex_package.utils.metadata_extraction import extract_document_metadata
+
+            result = extract_document_metadata(
+                pdf_path=tmp_path,
+                file_name=file_name,
+                document_name=doc_name,
+            )
+        finally:
+            os.unlink(tmp_path)
+
+        if result is None:
+            return func.HttpResponse(
+                json.dumps({
+                    "error": "Metadata extraction failed — LLM unavailable or PDF unreadable"
+                }),
+                status_code=503,
+                mimetype="application/json",
+            )
+
+        return func.HttpResponse(
+            body=json.dumps({
+                "document_name": result.document_name,
+                "document_number": result.document_number,
+                "issue_date": result.issue_date,
+                "editor_enterprises": [
+                    {"name": e.name, "role": e.role}
+                    for e in result.editor_enterprises
+                ],
+            }),
+            status_code=200,
+            mimetype="application/json",
+        )
+
+    except Exception as e:
+        logger.error(f"extract_metadata_client error: {e}")
+        return func.HttpResponse(
+            json.dumps({"error": str(e)}), status_code=500, mimetype="application/json"
+        )
+
+
+# ── POST /api/document/ingest ─────────────────────────────────────────────────
+
+def _run_ingest_job(job_id: str, input_data: dict):
+    """
+    Background job: parse + metadata extraction combined.
+    Does NOT run the full LLM requirement analysis (that is handled by the
+    watcher / POST /api/extract_requirements). Fast enough for FE preview.
+    """
+    import hashlib
+    import os
+    import tempfile
+
+    try:
+        file_content = base64.b64decode(input_data["file_content"])
+        file_name = input_data["filename"]
+        doc_name = os.path.splitext(file_name)[0]
+        template_hint = input_data.get("template") or None
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            tmp.write(file_content)
+            tmp_path = tmp.name
+
+        try:
+            # ── 1. Parse ──────────────────────────────────────────────────────
+            set_running(job_id, {"step": "parsing"})
+            from lex_package.parse import parse
+
+            parse_result = parse(tmp_path, file_name, template_hint=template_hint)
+            if isinstance(parse_result, dict):
+                articoli = parse_result.get("articoli", [])
+                template_meta = parse_result.get("template_meta", {})
+            else:
+                articoli = parse_result
+                template_meta = {}
+
+            # ── 2. Metadata ───────────────────────────────────────────────────
+            set_running(job_id, {"step": "metadata_extraction"})
+            from lex_package.utils.metadata_extraction import extract_document_metadata
+
+            metadata = extract_document_metadata(
+                pdf_path=tmp_path,
+                file_name=file_name,
+                document_name=doc_name,
+            )
+
+        finally:
+            os.unlink(tmp_path)
+
+        output = {
+            "parse": {
+                "document_name": doc_name,
+                "template_used": template_meta.get("id"),
+                "template_label": template_meta.get("label"),
+                "confidence": template_meta.get("confidence"),
+                "scores": template_meta.get("scores", {}),
+                "articoli": articoli,
+                "stats": {
+                    "articoli": len(articoli),
+                    "commi": sum(len(a.get("contenuto_parsato", [])) for a in articoli),
+                    "sottocommi": sum(
+                        len(c.get("contenuto_parsato_2", []))
+                        for a in articoli
+                        for c in a.get("contenuto_parsato", [])
+                    ),
+                },
+            },
+            "metadata": {
+                "document_name": metadata.document_name if metadata else None,
+                "document_number": metadata.document_number if metadata else None,
+                "issue_date": metadata.issue_date if metadata else None,
+                "editor_enterprises": [
+                    {"name": e.name, "role": e.role}
+                    for e in metadata.editor_enterprises
+                ] if metadata else [],
+            },
+        }
+        set_completed(job_id, output)
+
+    except Exception as e:
+        logger.error(f"Ingest job {job_id} error: {e}")
+        set_failed(job_id, str(e))
+
+
+@app.route(route="document/ingest", methods=["POST"])
+def ingest_document_client(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    POST /api/document/ingest
+
+    Combined parse + metadata extraction in a single async job.
+    Designed for FE document preview — does NOT run the full LLM requirement
+    analysis. For full ingestion into Neo4J, drop the PDF into WATCH_DIR.
+
+    Request (multipart/form-data):
+        file     PDF binary   required
+        template string       optional — force a specific parser:
+                              banca | regolamento | annex_tabular | boe | gazzetta_ue
+
+    Response 202:
+        { "id": "<job_id>", "statusQueryGetUri": "/api/job/<job_id>", "status": "Pending" }
+
+    Poll GET /api/job/<job_id> until runtimeStatus == "Completed".
+    Result shape:
+        {
+          "parse": {
+            "document_name": "...",
+            "template_used": "banca",
+            "template_label": "...",
+            "confidence": 1.0,
+            "scores": { ... },
+            "articoli": [...],
+            "stats": { "articoli": 31, "commi": 34, "sottocommi": 34 }
+          },
+          "metadata": {
+            "document_name": "DISPOSIZIONI IN MATERIA DI...",
+            "document_number": null,
+            "issue_date": "2019-07-30",
+            "editor_enterprises": [ { "name": "Banca d'Italia", "role": "author" } ]
+          }
+        }
+    """
+    try:
+        file = req.files.get("file")
+        if not file:
+            return func.HttpResponse(
+                json.dumps({"error": "No file provided"}),
+                status_code=400,
+                mimetype="application/json",
+            )
+
+        content = file.stream.read()
+        input_data = {
+            "filename": file.filename,
+            "file_content": base64.b64encode(content).decode("utf-8"),
+            "template": req.form.get("template"),
+        }
+
+        job_id = create_job("ingest", "Pending")
+        _job_executor.submit(_run_ingest_job, job_id, input_data)
+
+        return func.HttpResponse(
+            body=json.dumps({
+                "id": job_id,
+                "statusQueryGetUri": f"/api/job/{job_id}",
+                "status": "Pending",
+                "data": {"filename": file.filename},
+            }),
+            status_code=202,
+            mimetype="application/json",
+        )
+
+    except Exception as e:
+        logger.error(f"ingest_document_client error: {e}")
+        return func.HttpResponse(
+            json.dumps({"error": str(e)}), status_code=500, mimetype="application/json"
         )

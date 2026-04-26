@@ -18,12 +18,14 @@ Where main.py contains:
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 import logging
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
 from fastapi import FastAPI, Request
 from fastapi.responses import Response
+from starlette.datastructures import UploadFile as StarletteUploadFile
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +44,18 @@ class AuthLevel:
 
 # ── HttpRequest / HttpResponse (mimic azure.functions) ───────────────────────
 
+class _UploadFile:
+    """Minimal file-like object matching the Azure Functions / Werkzeug API."""
+
+    def __init__(self, filename: str, content: bytes, content_type: str = ""):
+        self.filename = filename
+        self.content_type = content_type
+        self.stream = io.BytesIO(content)
+
+    def read(self) -> bytes:
+        return self.stream.read()
+
+
 class HttpRequest:
     """Wraps a Starlette Request so Azure Functions handlers receive the same API."""
 
@@ -53,6 +67,8 @@ class HttpRequest:
         params: Dict[str, str],
         body: bytes,
         route_params: Dict[str, str],
+        files: Optional[Dict[str, "_UploadFile"]] = None,
+        form: Optional[Dict[str, str]] = None,
     ):
         self.method = method
         self.url = url
@@ -60,6 +76,8 @@ class HttpRequest:
         self.params = params
         self._body = body
         self.route_params = route_params
+        self.files = files or {}
+        self.form = form or {}
 
     def get_body(self) -> bytes:
         return self._body
@@ -122,7 +140,26 @@ class FunctionApp:
             # We use request.path_params so we don't need explicit path-param
             # declarations in the signature (Starlette populates them anyway).
             async def _endpoint(request: Request) -> Response:
-                body = await request.body()
+                content_type = request.headers.get("content-type", "")
+                files: Dict[str, "_UploadFile"] = {}
+                form_fields: Dict[str, str] = {}
+                body = b""
+
+                if "multipart/form-data" in content_type or "application/x-www-form-urlencoded" in content_type:
+                    form_data = await request.form()
+                    for key, value in form_data.multi_items():
+                        if isinstance(value, StarletteUploadFile):
+                            content = await value.read()
+                            files[key] = _UploadFile(
+                                filename=value.filename or key,
+                                content=content,
+                                content_type=value.content_type or "",
+                            )
+                        else:
+                            form_fields[key] = value
+                else:
+                    body = await request.body()
+
                 req = HttpRequest(
                     method=request.method,
                     url=str(request.url),
@@ -130,6 +167,8 @@ class FunctionApp:
                     params=dict(request.query_params),
                     body=body,
                     route_params=dict(request.path_params),
+                    files=files,
+                    form=form_fields,
                 )
                 try:
                     if asyncio.iscoroutinefunction(handler):

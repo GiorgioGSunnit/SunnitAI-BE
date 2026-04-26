@@ -7,8 +7,8 @@ from fastapi import FastAPI, Response, UploadFile, File, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 from requirement_extraction import RequirementExtractor
-from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient
-from azure.core.exceptions import ResourceExistsError, ResourceNotFoundError
+ResourceExistsError = FileExistsError
+ResourceNotFoundError = FileNotFoundError
 import logging
 from dotenv import load_dotenv
 import shutil
@@ -27,7 +27,6 @@ from typing import Dict, Any, Optional, Union, Tuple, Callable, List
 from datetime import datetime, timezone, timedelta
 from pydantic import BaseModel
 import markdown2
-import tiktoken
 from extration_utils import (
     compute_file_hash,
     get_python_path,
@@ -74,7 +73,6 @@ from lex_package.utils.normalize_articoli_tree import (
 )
 
 # Import the search module (now with proper naming)
-from searchAI_fulltext import EnhancedSearchService
 
 load_dotenv()
 
@@ -109,13 +107,24 @@ logging.getLogger("lex_package.analisi").setLevel(logging.DEBUG)
 logger = logging.getLogger(__name__)
 logger.info("FastAPI application starting with centralized logging.")
 
-os.environ["SEARCH_KEY"] = os.getenv("SEARCH_KEY")
-os.environ["TRANSLATOR_KEY"] = os.getenv("TRANSLATOR_KEY")
-os.environ["TRANSLATOR_LOCATION"] = os.getenv("TRANSLATOR_LOCATION")
 
-blob_service = BlobServiceClient.from_connection_string(os.getenv("CONNECTION_STRING"))
-container_name = os.getenv("CONTAINER_NAME")
-container_client = blob_service.get_container_client(container_name)
+# Local storage (replaces Azure Blob)
+try:
+    from utils import blob_storage_client as bsc
+    if bsc.is_available():
+        blob_service = bsc.get_blob_service_client()
+        container_name = bsc._get_container_name()
+        container_client = bsc.get_container_client()
+    else:
+        logger.warning("Blob Storage non configurato")
+        blob_service = None
+        container_name = None
+        container_client = None
+except Exception as _bsc_err:
+    logger.warning(f"Blob Storage init failed: {_bsc_err}")
+    blob_service = None
+    container_name = None
+    container_client = None
 
 app = FastAPI()
 
@@ -510,13 +519,12 @@ async def compare_requirements(
 
     try:
         # Initialize analyzer for direct calls
-        azure_config = {
-            "api_key": os.getenv("AZURE_OPENAI_API_KEY"),
-            "azure_endpoint": os.getenv("AZURE_OPENAI_ENDPOINT"),
-            "api_version": os.getenv("AZURE_API_VERSION", "2024-08-01-preview"),
+        llm_config = {
+            "api_key": os.getenv("LLM_API_KEY", os.getenv("OPENAI_API_KEY", "EMPTY")),
+            "base_url": os.getenv("LLM_BASE_URL"),
         }
         analyzer = RequirementAnalyzer(
-            backend="azure_openai", azure_config=azure_config
+            backend="openai", llm_config=llm_config
         )
 
         # Check both JSON files exist, if not extract them
@@ -1872,54 +1880,31 @@ class SearchRequest(BaseModel):
     # search_fields: list[str] = ["organizations", "people", "content", "keyphrases"] #"text_vector"
 
 
+# TODO: Search replacement needed if this endpoint is re-enabled.
+#
+# How it worked before:
+#   - chunk_indexer.py was run as a standalone script to chunk extracted JSON results
+#     and push them to Azure Cognitive Search.
+#   - This endpoint queried Azure Search to find relevant chunks across all indexed docs.
+#
+# How to replace it:
+#   1. On each /extract-requirements/ completion, chunk the output JSON and store
+#      chunks locally (e.g. as FAISS index or in pgvector if Postgres is available).
+#   2. Replace search_documents below with a query against that local index.
+#   3. searchAI_fulltext.py → EnhancedSearchService has the original query logic
+#      (stopword removal, field selection, scoring) that can be ported.
+#
+# Document processing (extraction, comparison, local storage) is fully working —
+# only the cross-document search layer is missing.
 @app.post("/search", response_model=dict)
 async def search_documents(request: SearchRequest):
-    logger.info(
-        f"Richiesta ricerca: {request.search_text} con from_analysis = {request.from_analysis}"
+    # Azure Search has been removed. Full-text search is not available.
+    # See TODO above for how to re-implement with a local search backend.
+    logger.warning("POST /search called but Azure Search has been removed — returning 503.")
+    raise HTTPException(
+        status_code=503,
+        detail="Full-text search is not available: Azure Search has been removed.",
     )
-    try:
-        output_dir = "./output_internal"
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
-            logger.info(f"Creato output_internal in {output_dir}")
-
-        output_filename = "output_search.json"
-        output_file_path = Path(os.path.join(output_dir, output_filename))
-        logger.info(f"Output search file: {output_file_path}")
-
-        # Direct call to the EnhancedSearchService class
-        search_service = EnhancedSearchService(
-            endpoint="https://cdpaisearch.search.windows.net",
-            index_name="azureblob-index-cdpai2",
-            api_key=os.getenv("SEARCH_KEY"),
-        )
-
-        # Determine if from_analysis should be used
-        from_analysis = (
-            hasattr(request, "from_analysis") and request.from_analysis == "1"
-        )
-        if from_analysis:
-            logger.info("Entro in modalità from_analysis 1")
-
-        # Call the search function directly
-        results = search_service.search_documents(
-            search_text=request.search_text,
-            top=request.top,
-            from_analysis=from_analysis,
-        )
-
-        # Save the results to a file for persistence
-        with open(output_file_path, "w", encoding="utf-8") as f:
-            json.dump(results, f, ensure_ascii=False, indent=4)
-
-        logger.info("Ricerca completata correttamente.")
-        return results
-
-    except Exception as e:
-        logger.exception("Errore durante la ricerca:")
-        raise HTTPException(
-            status_code=500, detail=f"An unexpected error occurred: {str(e)}"
-        )
 
 
 @app.get("/download-excel")
@@ -2149,14 +2134,7 @@ def download_html():
 
 
 def get_blob_content(blob_name: str) -> bytes:
-    connection_string = os.getenv("CONNECTION_STRING")
-    if not connection_string:
-        raise Exception("La connection string non è definita")
-    container_name = "cdp-ext"
-    blob_service_client = BlobServiceClient.from_connection_string(connection_string)
-    container_client = blob_service_client.get_container_client(container_name)
-    blob_client = container_client.get_blob_client(blob=blob_name)
-    return blob_client.download_blob().readall()
+    return bsc.get_blob_client(f"cdp-ext/{blob_name}").download_blob().readall()
 
 
 @app.get("/api/v0/results/{name}", response_model=dict)
@@ -2413,20 +2391,14 @@ def calculate_seconds_between(
 
 def get_blob_client_for_sum_data(
     connection_string: str, container: str, blob_name: str
-) -> BlobClient:
-    """Helper to get a BlobClient instance specifically for sum_data."""
-    if not connection_string:
-        logger.error(
-            "Connection string is not available for get_blob_client_for_sum_data"
-        )
-        raise ValueError("Azure Storage connection string is not configured.")
-    blob_service_client = BlobServiceClient.from_connection_string(connection_string)
-    return blob_service_client.get_blob_client(container=container, blob=blob_name)
+):
+    """Helper to get a local BlobClient for sum_data."""
+    return bsc.get_blob_client(f"{container}/{blob_name}")
 
 
-def ensure_sum_blob(connection_string: str) -> BlobClient:
+def ensure_sum_blob(connection_string: str = None):
     """
-    Returns the BlobClient for sum.json in the configured container.
+    Returns the local BlobClient for sum.json in the configured container.
     If the file does not exist, it creates it with default values.
     """
     blob_client = get_blob_client_for_sum_data(
@@ -2460,16 +2432,9 @@ def ensure_sum_blob(connection_string: str) -> BlobClient:
 
 def get_tokens(
     text: str,
-) -> List[int]:  # Matches function_app.py signature, returns list of tokens
-    """Encodes text to tokens using gpt-4-32k tokenizer."""
-    try:
-        tokenizer = tiktoken.encoding_for_model(
-            "gpt-4-32k"
-        )  # As per function_app, though gpt-4o was mentioned elsewhere
-        return tokenizer.encode(text)
-    except Exception as e:
-        logger.error(f"Error getting tokens: {e}")
-        return []  # Return empty list on error
+) -> range:
+    """Approssima il conteggio token (1 token ≈ 4 caratteri). Supporta len()."""
+    return range(len(text) // 4)
 
 
 def update_sum_data(
@@ -3010,13 +2975,12 @@ async def extract_requirements(file: UploadFile = File(...)):
 
         else:  # Fallback to old RequirementAnalyzer
             logger.info(f"{log_prefix}Using old RequirementAnalyzer.")
-            azure_config = {
-                "api_key": os.getenv("AZURE_OPENAI_API_KEY"),
-                "azure_endpoint": os.getenv("AZURE_OPENAI_ENDPOINT"),
-                "api_version": os.getenv("AZURE_API_VERSION", "2024-08-01-preview"),
+            llm_config = {
+                "api_key": os.getenv("LLM_API_KEY", os.getenv("OPENAI_API_KEY", "EMPTY")),
+                "base_url": os.getenv("LLM_BASE_URL"),
             }
             analyzer = RequirementAnalyzer(
-                backend="azure_openai", azure_config=azure_config
+                backend="openai", llm_config=llm_config
             )
             text_content_for_sum_data, offsets = (
                 analyzer.extract_text_with_page_mapping(str(temp_file_path))

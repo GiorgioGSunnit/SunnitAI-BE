@@ -63,6 +63,9 @@ class DocumentProfile:
     has_article_pattern: bool = False
     has_indice_keyword: bool = False
     has_indice_entries: bool = False
+    # True when formal "Articolo N" numbering is found anywhere in the first 15 pages
+    # (body-level detection, wider than head_text which only covers the first 3 pages)
+    has_articolo_in_body: bool = False
     # Banca-specific: requires the parser's own page-boundary detection
     banca_start_page: int | None = None
     # The hint the user passed in (if any)
@@ -216,6 +219,21 @@ def _select_parser(profile: DocumentProfile) -> str:
             best_type = tid
 
     if best_type:
+        # Override: banca selected but document has formal "Articolo N" article numbering
+        # in the body → it is a regolamento-style document, not a banca circular.
+        # This covers EXT_1_2-type docs whose filename happens to match banca keywords
+        # but whose structure uses numbered articles (Articolo 1, Articolo 2, …).
+        if best_type == "banca" and profile.has_articolo_in_body:
+            regolamento_score = scores.get("regolamento", 0)
+            regolamento_tmpl = next((t for t in _TEMPLATES if t["id"] == "regolamento"), None)
+            reg_threshold = regolamento_tmpl.get("threshold", 0) if regolamento_tmpl else 0
+            if regolamento_score >= reg_threshold:
+                print(
+                    f"[INFO] Formal 'Articolo N' numbering found in body "
+                    f"(regolamento score={regolamento_score} ≥ threshold={reg_threshold}) "
+                    f"→ overriding banca → regolamento"
+                )
+                best_type = "regolamento"
         return best_type
 
     # ── C: Fallback heuristics ────────────────────────────────────────────
@@ -297,6 +315,7 @@ def _build_profile(doc, pdf_name: str, template_hint: str | None) -> DocumentPro
     # Fallback heuristic signals
     profile.has_articolo_pattern = bool(re.search(r"\bArticolo\s+\d+\b", head_text))
     profile.has_article_pattern = bool(re.search(r"\bArticle\s+\d+\b", head_text))
+    profile.has_articolo_in_body = bool(re.search(r"\bArticolo\s+\d+\b", broader_text, re.IGNORECASE))
     indice_text = "\n".join(doc[i].get_text() for i in range(min(2, doc.page_count)))
     profile.has_indice_keyword = bool(re.search(r"\bindice\b", indice_text, re.IGNORECASE))
     profile.has_indice_entries = bool(_INDICE_ENTRY_RE.search(indice_text))

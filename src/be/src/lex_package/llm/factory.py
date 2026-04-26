@@ -27,28 +27,23 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 # ── Env-var lookup tables ─────────────────────────────────────────────────────
 
 _MODEL_ENV: Dict[str, Tuple[str, ...]] = {
-    "primary": ("LLM_MODEL", "AZURE_OPENAI_DEPLOYMENT_NAME"),
-    "fallback": ("LLM_FALLBACK_MODEL", "LLM_MODEL", "AZURE_OPENAI_DEPLOYMENT_NAME_BIS"),
+    "primary": ("LLM_MODEL",),
+    "fallback": ("LLM_FALLBACK_MODEL", "LLM_MODEL"),
 }
 
 _API_KEY_ENV: Dict[str, Tuple[str, ...]] = {
-    "primary": ("LLM_API_KEY", "OPENAI_API_KEY", "AZURE_OPENAI_API_KEY"),
-    "fallback": (
-        "LLM_API_KEY_FALLBACK",
-        "LLM_API_KEY",
-        "OPENAI_API_KEY",
-        "AZURE_OPENAI_API_KEY",
-    ),
+    "primary": ("LLM_API_KEY", "OPENAI_API_KEY"),
+    "fallback": ("LLM_API_KEY_FALLBACK", "LLM_API_KEY", "OPENAI_API_KEY"),
 }
 
 _BASE_URL_ENV: Dict[str, Tuple[str, ...]] = {
-    "primary": ("LLM_BASE_URL", "AZURE_OPENAI_ENDPOINT"),
-    "fallback": ("LLM_BASE_URL_FALLBACK", "LLM_BASE_URL", "AZURE_OPENAI_ENDPOINT"),
+    "primary": ("LLM_BASE_URL",),
+    "fallback": ("LLM_BASE_URL_FALLBACK", "LLM_BASE_URL"),
 }
 
 _DEFAULT_MODELS: Dict[str, str] = {
-    "primary": "gpt-4o-mini",
-    "fallback": "gpt-4o-mini",
+    "primary": "nemotron-2-30B-A3B",
+    "fallback": "nemotron-2-30B-A3B",
 }
 
 
@@ -129,7 +124,7 @@ def build_embedding_model(
 
     embedding_model = (
         overrides.get("model")
-        or _env("LLM_EMBEDDING_MODEL", "AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT_NAME")
+        or _env("LLM_EMBEDDING_MODEL")
     )
     if not embedding_model:
         raise ValueError(
@@ -138,18 +133,10 @@ def build_embedding_model(
 
     api_key = (
         overrides.get("api_key")
-        or _env(
-            "LLM_EMBEDDING_API_KEY",
-            "LLM_API_KEY",
-            "OPENAI_API_KEY",
-            "AZURE_OPENAI_API_KEY",
-            default="EMPTY",
-        )
+        or _env("LLM_EMBEDDING_API_KEY", "LLM_API_KEY", "OPENAI_API_KEY", default="EMPTY")
     )
 
-    base_url = overrides.get("base_url") or _env(
-        "LLM_EMBEDDING_BASE_URL", "LLM_BASE_URL", "AZURE_OPENAI_ENDPOINT"
-    )
+    base_url = overrides.get("base_url") or _env("LLM_EMBEDDING_BASE_URL", "LLM_BASE_URL")
 
     kwargs: Dict[str, Any] = {
         "model": embedding_model,

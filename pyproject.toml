@@ -30,18 +30,6 @@ langgraph = "^0.2.65"
 langgraph-checkpoint = "^2.0.10"
 langgraph-sdk = "^0.1.51"
 openai = "^1.55.0"
-tiktoken = "^0.8.0"
-
-# === Azure Services ===
-azure-storage-blob = "^12.24.0"
-azure-search-documents = "11.5.2"
-azure-ai-documentintelligence = "^1.0.0"
-azure-ai-formrecognizer = "^3.3.3"
-azure-identity = "^1.21.0"
-azure-cosmos = "^4.9.0"
-azure-keyvault-secrets = "^4.9.0"
-azure-core = "^1.32.0"
-langgraph-checkpoint-cosmosdb = "^0.2.3"
 
 # === Web Framework ===
 fastapi = {extras = ["standard"], version = "^0.115.0"}
@@ -80,11 +68,9 @@ orjson = "^3.10.15"
 tenacity = "^9.0.0"
 loguru = "^0.7.2"
 
-# === Monitoring (Azure) ===
-azure-monitor-opentelemetry = "^1.6.5"
+# === Monitoring ===
 opentelemetry-api = ">=1.30.0"
 opentelemetry-sdk = ">=1.30.0"
-# opentelemetry-instrumentation-* managed by azure-monitor-opentelemetry
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"
@@ -92,15 +78,6 @@ pytest-asyncio = "^0.23.0"
 ipywidgets = "^8.0.4"
 langchain-cli = "^0.0.36"
 
-[tool.poetry.group.azure-functions]
-optional = true
-
-[tool.poetry.group.azure-functions.dependencies]
-azure-functions = "^1.21.0"
-azure-functions-durable = "^1.2.9"
-azurefunctions-extensions-bindings-blob = "^1.0.0"
-azurefunctions-extensions-http-fastapi = "^1.0.0"
-scikit-learn = "^1.5.0"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

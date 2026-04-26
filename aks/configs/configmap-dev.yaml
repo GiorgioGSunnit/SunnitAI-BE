@@ -4,11 +4,26 @@ metadata:
   name: ${APP_NAME}-configmap
   namespace: ${NAMESPACE}
 data:
-  AZURE_KEY_VAULT_NAME: "kv-aiac-cdp-dev"
-  AZURE_TENANT_ID: "${TENANT_ID}"
-  # Azurite solo per runtime Azure Functions (lock lease, queue)
-  USE_AZURITE: "true"
-  AzureWebJobsStorage: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;QueueEndpoint=http://127.0.0.1:10001/devstoreaccount1;TableEndpoint=http://127.0.0.1:10002/devstoreaccount1;"
-  # Dati app -> Azure Storage reale via Managed Identity
-  AZURE_STORAGE_ACCOUNT_NAME: "sacdpdev001"
-  BLOB_CONTAINER_NAME: "ai-audit-poc-sa"
+  # ── LLM ───────────────────────────────────────────────────────────────────
+  LLM_BASE_URL: "${LLM_BASE_URL}"
+  LLM_MODEL: "nemotron-2-30B-A3B"
+
+  # ── Embeddings ─────────────────────────────────────────────────────────────
+  LLM_EMBEDDING_BASE_URL: "${LLM_EMBEDDING_BASE_URL}"
+  LLM_EMBEDDING_MODEL: "${LLM_EMBEDDING_MODEL}"
+
+  # ── Local storage (replaces Azure Blob) ────────────────────────────────────
+  LOCAL_STORAGE_PATH: "/opt/sunnitai-be/storage"
+  BLOB_CONTAINER_NAME: "cdp-ext"
+
+  # ── Filesystem watcher ────────────────────────────────────────────────────
+  WATCH_DIR: "/opt/sunnitai-be/inbox"
+  WATCHER_POLL_SECONDS: "10"
+
+  # ── Neo4J ──────────────────────────────────────────────────────────────────
+  NEO4J_URI: "${NEO4J_URI}"
+  NEO4J_USER: "neo4j"
+  NEO4J_DATABASE: "neo4j"
+
+  # ── App ────────────────────────────────────────────────────────────────────
+  NOTIFICATION_EMAIL: ""

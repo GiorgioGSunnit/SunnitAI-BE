@@ -50,9 +50,9 @@ class LLMProvider:
 
     @classmethod
     def from_settings(cls) -> "LLMProvider":
-        base_url = _get("LLM_BASE_URL", "AZURE_OPENAI_ENDPOINT")
-        api_key = _get("LLM_API_KEY", "OPENAI_API_KEY", "AZURE_OPENAI_API_KEY", default="EMPTY")
-        deployment = _get("LLM_MODEL", "AZURE_OPENAI_DEPLOYMENT_NAME", default="gpt-4o-mini")
+        base_url = _get("LLM_BASE_URL")
+        api_key = _get("LLM_API_KEY", "OPENAI_API_KEY", default="EMPTY")
+        deployment = _get("LLM_MODEL", default="nemotron-2-30B-A3B")
         return cls(api_key=api_key, base_url=base_url or None, deployment=deployment)
 
     async def generate_response(self, messages: List[Dict[str, str]], **kwargs):
