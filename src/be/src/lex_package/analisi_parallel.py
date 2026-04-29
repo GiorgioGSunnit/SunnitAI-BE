@@ -115,7 +115,7 @@ async def analisi_parallel(
     # Minimum content length to send to LLM (skip empty/trivial items)
     MIN_CONTENT_LEN = 10
     # Maximum words per request to avoid RunPod 120s timeout
-    MAX_CONTENT_WORDS = 700
+    MAX_CONTENT_WORDS = 400
 
     # Flatten every comma into one big list
     flat_inputs = []
