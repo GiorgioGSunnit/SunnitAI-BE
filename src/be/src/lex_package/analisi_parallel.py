@@ -1,4 +1,5 @@
 import logging
+import time
 from functools import lru_cache
 from pathlib import Path
 
@@ -175,6 +176,17 @@ async def analisi_parallel(
 
     total_items = len(flat_inputs)
 
+    token_counts = [len(msgs[-1].content.split()) for msgs in flat_inputs]
+    if token_counts:
+        logger.info(
+            "LLM batch stats — requests: %d, tokens/req: min=%d avg=%d max=%d, concurrency: %d",
+            total_items,
+            min(token_counts),
+            sum(token_counts) // len(token_counts),
+            max(token_counts),
+            MAX_CONCURRENCY,
+        )
+
     print("     - Analisi_parallel 🥔🥔🥔", total_items)
 
     # 2️⃣  Parallel call with automatic fallback -----------------
@@ -183,11 +195,17 @@ async def analisi_parallel(
         results = []
     else:
         try:
+            t0 = time.time()
             results = await _invoke_with_fallback_batch(
                 _get_structured_llm(),
                 _get_structured_llm_fallback(),
                 flat_inputs,
                 cfg,
+            )
+            elapsed = time.time() - t0
+            logger.info(
+                "LLM batch completed — %d requests in %.1fs (avg %.1fs/req)",
+                total_items, elapsed, elapsed / total_items,
             )
         except ContentFilterFinishReasonError:
             logger.warning(
