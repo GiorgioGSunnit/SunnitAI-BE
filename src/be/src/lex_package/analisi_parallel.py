@@ -56,7 +56,7 @@ def _get_structured_llm_fallback():
     return _build_structured(_get_llm_fallback())
 
 
-MAX_CONCURRENCY = 5
+MAX_CONCURRENCY = 2
 
 # ---------------------------------------------------------------------------
 # Helper that first tries primary LLM; if a 429 with a Retry-After >1s occurs
