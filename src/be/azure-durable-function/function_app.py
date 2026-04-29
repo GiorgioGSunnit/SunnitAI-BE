@@ -758,6 +758,59 @@ def upload_client(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps({"error": str(e)}), status_code=500, mimetype="application/json"
         )
 
+# Ingest endpoint — drops a PDF into the watcher inbox to trigger the full
+# parse → LLM → Neo4J pipeline.
+@app.route(route="ingest", methods=["POST"])
+def ingest(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    POST /api/ingest  (multipart/form-data)
+        file  — PDF binary (required)
+
+    Saves the PDF to WATCH_DIR so the watcher picks it up and runs the full
+    ingestion pipeline (parse → LLM analysis → Neo4J write).
+    Returns 202 immediately; processing happens asynchronously.
+    """
+    try:
+        file = req.files.get("file")
+        if not file:
+            return func.HttpResponse(
+                json.dumps({"error": "No file provided"}),
+                status_code=400,
+                mimetype="application/json",
+            )
+
+        if not file.filename.lower().endswith(".pdf"):
+            return func.HttpResponse(
+                json.dumps({"error": "Only PDF files are accepted"}),
+                status_code=400,
+                mimetype="application/json",
+            )
+
+        watch_dir = Path(os.environ.get("WATCH_DIR", "/opt/sunnitai-be/inbox"))
+        watch_dir.mkdir(parents=True, exist_ok=True)
+
+        dest = watch_dir / file.filename
+        dest.write_bytes(file.stream.read())
+
+        logger.info("ingest: dropped '%s' into %s", file.filename, watch_dir)
+
+        return func.HttpResponse(
+            json.dumps({
+                "status": "accepted",
+                "filename": file.filename,
+                "message": "File queued for ingestion. Check watcher logs for progress.",
+            }),
+            status_code=202,
+            mimetype="application/json",
+        )
+
+    except Exception as e:
+        logger.error(f"ingest error: {e}")
+        return func.HttpResponse(
+            json.dumps({"error": str(e)}), status_code=500, mimetype="application/json"
+        )
+
+
 # @app.route(route="upload", methods=['POST'])
 # def upload(req: func.HttpRequest) -> func.HttpResponse:
 #     logging.info('Python HTTP trigger function processed a request.')
