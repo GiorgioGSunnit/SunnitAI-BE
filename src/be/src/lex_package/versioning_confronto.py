@@ -730,7 +730,10 @@ async def confronto_versioning(
             IndiceSpecifico = indiciConSpecifiche[j]
             articoli_2[IndiceSpecifico]["Descrizione"] = idx_ConSpecifiche.DescrizioneCambiamento
 
-    from utils.blob_storage_client import upload_debug_log
-    upload_debug_log("debug_log_versioning.txt", "\n".join(debug_log))
+    try:
+        from utils.blob_storage_client import upload_debug_log
+        upload_debug_log("debug_log_versioning.txt", "\n".join(debug_log))
+    except Exception:
+        pass
 
     return articoli_2

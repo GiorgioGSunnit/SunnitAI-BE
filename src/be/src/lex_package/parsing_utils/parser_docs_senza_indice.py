@@ -152,8 +152,11 @@ def parser_contenuto(pdf_path: str) -> list[dict]:
     if current_chapter:
         capitoli.append(current_chapter)
 
-    from utils.blob_storage_client import upload_debug_log
-    upload_debug_log("debug_log.txt", "\n".join(debug_log))
+    try:
+        from utils.blob_storage_client import upload_debug_log
+        upload_debug_log("debug_log.txt", "\n".join(debug_log))
+    except Exception:
+        pass
 
     return capitoli
 
