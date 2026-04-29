@@ -318,8 +318,11 @@ async def analisi_parallel(
         articolo_text = f"{a.get('titolo','')}\n" + "\n".join(pieces[:200])
         a["embedding"] = embed_text(articolo_text)
 
-    from utils.blob_storage_client import upload_debug_log
-    upload_debug_log("debug_log_AnalisiParallel.txt", "\n".join(debug_log))
+    try:
+        from utils.blob_storage_client import upload_debug_log
+        upload_debug_log("debug_log_AnalisiParallel.txt", "\n".join(debug_log))
+    except Exception:
+        pass
 
     logger.info("Finished parallel analysis 🔎")
     return articoli
