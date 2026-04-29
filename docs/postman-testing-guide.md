@@ -1,11 +1,60 @@
 # SunnitAI — Postman Testing Guide
 
-**Base URL:** `http://<server>:2025`  
+## Services
+
+| Service | Base URL | Purpose |
+|---------|----------|---------|
+| Functions API | `http://<server>:7071` | Upload, ingest, job management |
+| VMAI API | `http://<server>:2025` | Parse, metadata, document processing |
+
 All requests that upload a PDF use `multipart/form-data`.
 
 ---
 
-## 1. Health check (verify server is up)
+## 1. Ingest a PDF into Neo4J (watcher pipeline)
+
+This is the recommended way to write a document to Neo4J.
+
+| Field | Value |
+|-------|-------|
+| Method | `POST` |
+| URL | `http://<server>:7071/api/ingest` |
+| Body | `form-data` |
+
+In the Body tab, set:
+| Key | Type | Value |
+|-----|------|-------|
+| `file` | File | *(select your PDF)* |
+
+**Expected response `202` (immediate):**
+```json
+{
+  "status": "accepted",
+  "filename": "EXT_1_1_Provvedimento UIF.pdf",
+  "message": "File queued for ingestion. Check watcher logs for progress."
+}
+```
+
+Processing runs asynchronously via the watcher. Monitor progress on the server:
+```bash
+journalctl -u sunnitai-watcher -f
+```
+
+Expected log sequence:
+```
+[1/4] Running analisi...
+[2/4] Flattening analysis...
+[3/4] Building graph payload...
+[4/4] Writing to Neo4J...
+Neo4J: wrote X nodes and X relationships
+Done: moved to /opt/sunnitai-be/inbox/done/
+```
+
+> Note: Processing time depends on document size. A 49-request document takes ~15-60 minutes depending on RunPod availability.
+
+---
+
+## 2. Health check — VMAI API (verify server is up)
 
 | Field | Value |
 |-------|-------|
