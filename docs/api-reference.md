@@ -1,6 +1,11 @@
 # SunnitAI API Reference
 
-**Base URL:** `http://<server>:2025`
+## Services
+
+| Service | Port | Purpose |
+|---------|------|---------|
+| Functions API | `7071` | Upload, ingest, job management |
+| VMAI API | `2025` | Parse, metadata, document processing |
 
 All file uploads use `multipart/form-data`.  
 Async endpoints return `202` immediately — poll `GET /api/job/{job_id}` until `status` is `completed` or `failed`.
@@ -9,14 +14,57 @@ Async endpoints return `202` immediately — poll `GET /api/job/{job_id}` until 
 
 ## Endpoints
 
+### Functions API — `http://<server>:7071`
+
+| Method | Endpoint | Type | Description |
+|--------|----------|------|-------------|
+| POST | `/api/upload` | Async | Upload PDF to blob storage (FE preview & extraction) |
+| POST | `/api/ingest` | Sync | Drop PDF into watcher inbox → full Neo4J pipeline |
+| GET | `/api/job/{job_id}` | Sync | Poll async job status |
+
+### VMAI API — `http://<server>:2025`
+
 | Method | Endpoint | Type | Description |
 |--------|----------|------|-------------|
 | GET | `/health` | Sync | Service health check |
 | POST | `/api/parse` | Async | Parse a PDF → articoli structure |
 | POST | `/api/metadata` | Sync | Extract metadata via LLM |
 | POST | `/api/document/ingest` | Async | Parse + metadata (no Neo4J) |
-| POST | `/api/document/process` | Async | Full pipeline → Neo4J write |
+| POST | `/api/document/process` | Async | Full pipeline → Neo4J write (inline) |
 | GET | `/api/job/{job_id}` | Sync | Poll async job status |
+
+---
+
+## POST /api/ingest (port 7071)
+
+Drops a PDF into the watcher inbox to trigger the full ingestion pipeline:  
+**parse → LLM analysis → flatten → Neo4J write**
+
+Processing happens asynchronously via the watcher service. Returns `202` immediately.
+
+**Request:** `multipart/form-data`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `file` | PDF file | Yes | The document to ingest |
+
+**Response `202`:**
+```json
+{
+  "status": "accepted",
+  "filename": "EXT_1_1_Provvedimento UIF.pdf",
+  "message": "File queued for ingestion. Check watcher logs for progress."
+}
+```
+
+**Monitor progress** via server logs:
+```bash
+journalctl -u sunnitai-watcher -f
+```
+
+> Use this endpoint to write documents to Neo4J. For FE preview only, use `/api/upload` instead.
+
+---
 
 ---
 
