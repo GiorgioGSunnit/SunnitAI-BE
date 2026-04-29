@@ -114,6 +114,8 @@ async def analisi_parallel(
 
     # Minimum content length to send to LLM (skip empty/trivial items)
     MIN_CONTENT_LEN = 10
+    # Maximum words per request to avoid RunPod 120s timeout
+    MAX_CONTENT_WORDS = 700
 
     # Flatten every comma into one big list
     flat_inputs = []
@@ -140,6 +142,10 @@ async def analisi_parallel(
                             sottocomma.get("identificativo", ""),
                         )
                         continue
+                    words = content.split()
+                    if len(words) > MAX_CONTENT_WORDS:
+                        logger.warning("Truncating sottocomma %s from %d to %d words", sottocomma.get("identificativo", ""), len(words), MAX_CONTENT_WORDS)
+                        content = " ".join(words[:MAX_CONTENT_WORDS])
                     debug_log.append(f"          --> Sottocomma {sottocomma.get('identificativo', '')} di articolo {art['titolo']}  - contenuto lungo {len(content)}")
                     flat_inputs.append(
                         [
@@ -161,6 +167,10 @@ async def analisi_parallel(
                         "Skipping empty comma: id=%s", comma.get("identificativo", "")
                     )
                     continue
+                words = content.split()
+                if len(words) > MAX_CONTENT_WORDS:
+                    logger.warning("Truncating comma %s from %d to %d words", comma.get("identificativo", ""), len(words), MAX_CONTENT_WORDS)
+                    content = " ".join(words[:MAX_CONTENT_WORDS])
                 debug_log.append(f"          --> Comma {comma.get('identificativo', '')} di articolo {art['titolo']}  - contenuto lungo {len(content)}")
                 flat_inputs.append(
                     [
