@@ -4,7 +4,7 @@ from pathlib import Path
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
-from openai import RateLimitError, APITimeoutError, ContentFilterFinishReasonError
+from openai import RateLimitError, APITimeoutError, ContentFilterFinishReasonError, InternalServerError
 
 from lex_package.utils.runtime_checks import lex_package_is_installed
 from lex_package.utils.utils import load_prompt
@@ -38,7 +38,7 @@ def _get_llm_fallback():
 def _build_structured(llm_base):
     """Return the LLM wrapped with the proper structured output + retry policy."""
     return llm_base.with_structured_output(Analisi_Paragrafo).with_retry(
-        retry_if_exception_type=(RateLimitError, APITimeoutError),
+        retry_if_exception_type=(RateLimitError, APITimeoutError, InternalServerError),
         stop_after_attempt=5,
         wait_exponential_jitter=True,
     )
