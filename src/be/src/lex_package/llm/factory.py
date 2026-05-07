@@ -21,7 +21,11 @@ import os
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Tuple
 
+import logging
+
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+
+logger = logging.getLogger(__name__)
 
 
 # ── Env-var lookup tables ─────────────────────────────────────────────────────
@@ -101,11 +105,14 @@ def build_chat_model(
         "model": model_name,
         "api_key": api_key,
         "temperature": temperature,
+        "request_timeout": 90,
     }
     if base_url:
         kwargs["base_url"] = base_url
 
-    return ChatOpenAI(**kwargs)
+    model = ChatOpenAI(**kwargs)
+    logger.info("LLM client timeout (from framework): %s", model.client.timeout)
+    return model
 
 
 def build_embedding_model(
