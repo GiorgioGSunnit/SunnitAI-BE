@@ -35,6 +35,7 @@ from job_store import (
 # Storage handled by local filesystem via blob_storage_client.py
 
 from utils import blob_storage_client as bsc
+from utils.blob_storage_client import LocalBlobClient as BlobClient
 from dotenv import load_dotenv
 import os
 import json
