@@ -162,7 +162,9 @@ EnvironmentFile=${APP_DIR}/.env
 ExecStart=${VENV}/bin/uvicorn main:app \
     --host 0.0.0.0 \
     --port ${PORT_FUNCTIONS} \
-    --log-level info
+    --log-level info \
+    --timeout-keep-alive 75 \
+    --timeout-graceful-shutdown 30
 Restart=always
 RestartSec=5
 StandardOutput=journal
