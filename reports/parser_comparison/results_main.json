@@ -1,0 +1,32 @@
+[
+  {
+    "pdf": "NEW_1to5.pdf",
+    "elapsed_ms": 201.915,
+    "entry_count": 0,
+    "titles": [],
+    "entries": []
+  },
+  {
+    "pdf": "OLD_1to5.pdf",
+    "elapsed_ms": 141.91,
+    "entry_count": 0,
+    "titles": [],
+    "entries": []
+  },
+  {
+    "pdf": "generated_index_case.pdf",
+    "elapsed_ms": 128.367,
+    "entry_count": 1,
+    "titles": [
+      "Ambito di applicazione"
+    ],
+    "entries": [
+      {
+        "pagina_indice": 1,
+        "pagina_destinazione": 3,
+        "identificativo": "1.",
+        "titolo": "Ambito di applicazione"
+      }
+    ]
+  }
+]

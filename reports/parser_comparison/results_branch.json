@@ -1,0 +1,39 @@
+[
+  {
+    "pdf": "NEW_1to5.pdf",
+    "elapsed_ms": 148.043,
+    "entry_count": 0,
+    "titles": [],
+    "entries": []
+  },
+  {
+    "pdf": "OLD_1to5.pdf",
+    "elapsed_ms": 144.503,
+    "entry_count": 0,
+    "titles": [],
+    "entries": []
+  },
+  {
+    "pdf": "generated_index_case.pdf",
+    "elapsed_ms": 133.601,
+    "entry_count": 2,
+    "titles": [
+      "Ambito di applicazione",
+      "Capitolo 7 Requisiti operativi"
+    ],
+    "entries": [
+      {
+        "pagina_indice": 1,
+        "pagina_destinazione": 3,
+        "identificativo": "1.",
+        "titolo": "Ambito di applicazione"
+      },
+      {
+        "pagina_indice": 1,
+        "pagina_destinazione": 42,
+        "identificativo": "",
+        "titolo": "Capitolo 7 Requisiti operativi"
+      }
+    ]
+  }
+]
