@@ -6,9 +6,9 @@ from lex_package.analisi_parallel import analisi_parallel
 logger = logging.getLogger("lex_package.analisi")
 
 # Execute the async function with asyncio.run()
-async def analisi(pdf_path, pdf_name):
+async def analisi(pdf_path, pdf_name, template_hint: str | None = None):
     logger.info(f"Starting analisi for {pdf_name} at {pdf_path}")
-    articoli: list[dict] = parse(pdf_path, pdf_name)
+    articoli: list[dict] = parse(pdf_path, pdf_name, template_hint=template_hint)
     logger.info(f"Parse returned {len(articoli)} articoli")
     output = await analisi_parallel(articoli, pdf_name)
     logger.info(f"[OUTPUT ANALISI]: {output}")

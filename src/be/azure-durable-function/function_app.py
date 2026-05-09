@@ -124,18 +124,14 @@ def get_job_status(req: func.HttpRequest) -> func.HttpResponse:
         return func.HttpResponse(
             json.dumps({"error": "Job not found", "id": job_id}), status_code=404, mimetype="application/json"
         )
-    # Formato compatibile con FE che fa polling (runtimeStatus, output)
     body = {
         "id": job["id"],
         "runtimeStatus": job["runtimeStatus"],
-        "created_at": job["created_at"],
+        "status": job["runtimeStatus"],
+        "custom_status": job.get("custom_status"),
+        "result": job.get("result"),
+        "error": job.get("error"),
     }
-    if job.get("custom_status"):
-        body["customStatus"] = job["custom_status"]
-    if job.get("result") is not None:
-        body["output"] = job["result"]
-    if job.get("error") is not None:
-        body["output"] = {"error": job["error"], "status": "error"}
     return func.HttpResponse(
         json.dumps(body), status_code=200, mimetype="application/json"
     )
@@ -4507,6 +4503,170 @@ def ingest_document_client(req: func.HttpRequest) -> func.HttpResponse:
 
     except Exception as e:
         logger.error(f"ingest_document_client error: {e}")
+        return func.HttpResponse(
+            json.dumps({"error": str(e)}), status_code=500, mimetype="application/json"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Full pipeline endpoint — parse → LLM analysis → Neo4J write
+# ---------------------------------------------------------------------------
+
+def _run_full_pipeline_job(job_id: str, input_data: dict):
+    """
+    Background job that mirrors the watcher's process_pdf:
+        1. Parse + LLM analysis (analisi)
+        2. consolida_analisi
+        3. flatten_analisi_invertito
+        4. build_neo4j_graph_payload
+        5. write_graph_payload → Neo4J
+
+    Job custom_status is updated at every step so the FE can show progress.
+    """
+    import asyncio
+    import hashlib
+    import os
+    import tempfile
+
+    try:
+        file_content = base64.b64decode(input_data["file_content"])
+        file_name    = input_data["filename"]
+        doc_name     = os.path.splitext(file_name)[0]
+        template_hint = input_data.get("template") or None
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            tmp.write(file_content)
+            tmp_path = tmp.name
+
+        try:
+            # ── 1. Parse + LLM analysis ───────────────────────────────────────
+            set_running(job_id, {"step": "parsing_and_analysis", "progress": "1/4"})
+            from lex_package.analisi import analisi, consolida_analisi
+
+            raw         = asyncio.run(analisi(tmp_path, file_name, template_hint=template_hint))
+            consolidated = asyncio.run(consolida_analisi(raw))
+
+            # ── 2. Flatten ────────────────────────────────────────────────────
+            set_running(job_id, {"step": "flattening", "progress": "2/4"})
+            from lex_package.utils.flatten import flatten_analisi_invertito, build_neo4j_graph_payload
+
+            flattened = flatten_analisi_invertito(consolidated)
+
+            # ── 3. Build graph payload ────────────────────────────────────────
+            set_running(job_id, {"step": "building_graph", "progress": "3/4"})
+            doc_hash = hashlib.sha256(file_content).hexdigest()
+            payload  = build_neo4j_graph_payload(
+                flattened,
+                document_name=doc_name,
+                document_hash=doc_hash,
+                file_name=file_name,
+                pdf_path=tmp_path,
+            )
+
+            # ── 4. Write to Neo4J ─────────────────────────────────────────────
+            set_running(job_id, {"step": "writing_neo4j", "progress": "4/4"})
+            from lex_package.utils.graph_writer import is_configured, write_graph_payload
+
+            nodes_written, rels_written = 0, 0
+            if is_configured():
+                nodes_written, rels_written = write_graph_payload(payload)
+                logger.info(
+                    "Full pipeline job %s: wrote %d nodes and %d rels to Neo4J",
+                    job_id, nodes_written, rels_written,
+                )
+            else:
+                logger.warning("Full pipeline job %s: NEO4J_URI not set — skipping DB write", job_id)
+
+        finally:
+            os.unlink(tmp_path)
+
+        set_completed(job_id, {
+            "filename": file_name,
+            "nodes_written": nodes_written,
+            "relationships_written": rels_written,
+            "neo4j_enabled": is_configured(),
+        })
+
+    except Exception as e:
+        logger.error("Full pipeline job %s failed: %s", job_id, e)
+        set_failed(job_id, str(e))
+
+
+@app.route(route="pipeline", methods=["POST"])
+def ingest_full_pipeline(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    POST /api/pipeline  (multipart/form-data)
+
+    Runs the full ingestion pipeline on an uploaded PDF:
+        parse → LLM analysis → flatten → Neo4J write
+
+    Fields:
+        file      PDF binary   required
+        template  string       optional — force parser: banca | regolamento |
+                               annex_tabular | boe | gazzetta_ue
+
+    Response 202:
+        {
+          "id": "<job_id>",
+          "statusQueryGetUri": "/api/job/<job_id>",
+          "status": "Pending",
+          "filename": "<original filename>"
+        }
+
+    Poll GET /api/job/<job_id> until runtimeStatus == "Completed".
+    The result field will contain:
+        {
+          "filename": "...",
+          "nodes_written": 42,
+          "relationships_written": 91,
+          "neo4j_enabled": true
+        }
+    custom_status shows the current step:
+        { "step": "parsing_and_analysis", "progress": "1/4" }
+        { "step": "flattening",           "progress": "2/4" }
+        { "step": "building_graph",       "progress": "3/4" }
+        { "step": "writing_neo4j",        "progress": "4/4" }
+    """
+    try:
+        file = req.files.get("file")
+        if not file:
+            return func.HttpResponse(
+                json.dumps({"error": "No file provided"}),
+                status_code=400,
+                mimetype="application/json",
+            )
+
+        if not file.filename.lower().endswith(".pdf"):
+            return func.HttpResponse(
+                json.dumps({"error": "Only PDF files are accepted"}),
+                status_code=400,
+                mimetype="application/json",
+            )
+
+        input_data = {
+            "filename": file.filename,
+            "file_content": base64.b64encode(file.stream.read()).decode("utf-8"),
+            "template": req.form.get("template"),
+        }
+
+        job_id = create_job("pipeline", "Pending")
+        _job_executor.submit(_run_full_pipeline_job, job_id, input_data)
+
+        logger.info("pipeline: queued job %s for '%s'", job_id, file.filename)
+
+        return func.HttpResponse(
+            body=json.dumps({
+                "id": job_id,
+                "statusQueryGetUri": f"/api/job/{job_id}",
+                "status": "Pending",
+                "filename": file.filename,
+            }),
+            status_code=202,
+            mimetype="application/json",
+        )
+
+    except Exception as e:
+        logger.error("pipeline endpoint error: %s", e)
         return func.HttpResponse(
             json.dumps({"error": str(e)}), status_code=500, mimetype="application/json"
         )

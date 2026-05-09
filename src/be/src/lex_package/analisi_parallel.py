@@ -1,10 +1,10 @@
 import logging
 import time
+from collections import defaultdict
 from functools import lru_cache
 from pathlib import Path
 
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_core.runnables import RunnableConfig
 from openai import RateLimitError, APITimeoutError, ContentFilterFinishReasonError, InternalServerError
 
 from lex_package.utils.runtime_checks import lex_package_is_installed
@@ -37,12 +37,10 @@ def _get_llm_fallback():
 
 
 def _build_structured(llm_base):
-    """Return the LLM wrapped with the proper structured output + retry policy."""
-    return llm_base.with_structured_output(Analisi_Paragrafo).with_retry(
-        retry_if_exception_type=(RateLimitError, APITimeoutError, InternalServerError),
-        stop_after_attempt=5,
-        wait_exponential_jitter=True,
-    )
+    """Return the LLM wrapped with structured output.
+    No retry wrapper — the call loop handles fallback manually per-chunk.
+    """
+    return llm_base.with_structured_output(Analisi_Paragrafo)
 
 
 @lru_cache(maxsize=1)
@@ -57,37 +55,87 @@ def _get_structured_llm_fallback():
     return _build_structured(_get_llm_fallback())
 
 
-MAX_CONCURRENCY = 1
+# ---------------------------------------------------------------------------
+# Chunk size — max words per LLM call to stay safely within the 90s timeout.
+# Based on observed throughput (~57 words/s), 400 words ≈ 7s per call.
+# Increase if you want fewer calls on longer documents; decrease for tighter
+# timeout safety. Re-enable truncation below if you need a hard cap instead.
+# ---------------------------------------------------------------------------
+MAX_CHUNK_WORDS = 400
 
 # ---------------------------------------------------------------------------
-# Helper that first tries primary LLM; if a 429 with a Retry-After >1s occurs
-# automatically retries the whole batch on the fallback deployment. Mirrors the
-# implementation used in versioning_confronto.py so behaviour is consistent.
+# Pattern priority for merging chunk results — higher wins.
 # ---------------------------------------------------------------------------
+_PATTERN_PRIORITY = {
+    "sanzione": 5,
+    "obbligo": 4,
+    "termine temporale": 3,
+    "condizione": 2,
+    "altro": 1,
+}
 
 
-async def _invoke_with_fallback_batch(primary_llm, fallback_llm, batches, cfg):
-    """Invoke **batches** with *primary_llm*.
-
-    If a RateLimitError is raised and its HTTP response has a Retry-After header
-    greater than one second, re-issue the same call to *fallback_llm* instead of
-    waiting, providing an automatic high-availability path.
+def _chunk_content(content: str, max_words: int) -> list[str]:
     """
-    try:
-        return await primary_llm.abatch(batches, config=cfg)
-    except RateLimitError as e:
-        delay = None
-        if getattr(e, "response", None):
-            try:
-                delay = float(e.response.headers.get("Retry-After"))
-            except (TypeError, ValueError):
-                pass
+    Split *content* into chunks of at most *max_words* words each.
+    Returns a list with at least one element (the original content if short enough).
+    """
+    words = content.split()
+    if len(words) <= max_words:
+        return [content]
+    return [
+        " ".join(words[i: i + max_words])
+        for i in range(0, len(words), max_words)
+    ]
 
-        if delay and delay > 1:
-            logger.warning(f"[Retry-After={delay}s] – switching to fallback deployment")
-            return await fallback_llm.abatch(batches, config=cfg)
 
-        raise  # propagate so the built-in retry policy can kick in
+def _merge_chunk_results(chunks: list[Analisi_Paragrafo]) -> Analisi_Paragrafo:
+    """
+    Merge multiple Analisi_Paragrafo results (from chunked LLM calls) into one.
+
+    - pattern_type : highest priority value wins
+    - requirement  : non-empty values joined with "; "
+    - core_text    : non-empty values joined with " "
+    - search_text  : non-empty values joined with " "
+    - riferimenti  : union, deduplicated by (n_articolo, nome_documento)
+    - riferimento_articolo : first non-None value
+    """
+    if len(chunks) == 1:
+        return chunks[0]
+
+    best = max(
+        chunks,
+        key=lambda c: _PATTERN_PRIORITY.get(
+            c.pattern_type.value if c.pattern_type else "altro", 1
+        ),
+    )
+
+    requirements = [c.requirement for c in chunks if c.requirement]
+    core_texts   = [c.core_text   for c in chunks if c.core_text]
+    search_texts = [c.search_text for c in chunks if c.search_text]
+
+    seen_refs: set[tuple] = set()
+    merged_refs = []
+    for chunk in chunks:
+        for ref in chunk.riferimenti or []:
+            key = (ref.n_articolo, ref.nome_documento)
+            if key not in seen_refs:
+                seen_refs.add(key)
+                merged_refs.append(ref)
+
+    riferimento_articolo = next(
+        (c.riferimento_articolo for c in chunks if c.riferimento_articolo), None
+    )
+
+    return Analisi_Paragrafo(
+        riferimento_articolo=riferimento_articolo,
+        requirement="; ".join(requirements) if requirements else None,
+        core_text=" ".join(core_texts) if core_texts else None,
+        search_text=" ".join(search_texts) if search_texts else None,
+        pattern_type=best.pattern_type,
+        riferimenti=merged_refs if merged_refs else None,
+    )
+
 
 
 async def analisi_parallel(
@@ -115,12 +163,16 @@ async def analisi_parallel(
     # Minimum content length to send to LLM (skip empty/trivial items)
     MIN_CONTENT_LEN = 10
     # Maximum words per request to avoid RunPod 120s timeout
-    MAX_CONTENT_WORDS = 400
+    # MAX_CONTENT_WORDS = 400  # kept for reference — now handled by chunking
 
-    # Flatten every comma into one big list
-    flat_inputs = []
+    # flat_inputs  : one entry per chunk (multiple chunks per long comma)
+    # comma_indices: maps each flat_input entry back to its comma index in
+    #                merged_results, so chunks can be merged after LLM calls
+    flat_inputs:   list = []
+    comma_indices: list[int] = []
     debug_log = []
     article_lengths = []
+    comma_idx = 0  # increments once per comma, regardless of chunks
 
     logger.info(f"[# ARTICOLI]: {len(articoli)}")
 
@@ -142,22 +194,33 @@ async def analisi_parallel(
                             sottocomma.get("identificativo", ""),
                         )
                         continue
-                    words = content.split()
-                    if len(words) > MAX_CONTENT_WORDS:
-                        logger.warning("Truncating sottocomma %s from %d to %d words", sottocomma.get("identificativo", ""), len(words), MAX_CONTENT_WORDS)
-                        content = " ".join(words[:MAX_CONTENT_WORDS])
-                    debug_log.append(f"          --> Sottocomma {sottocomma.get('identificativo', '')} di articolo {art['titolo']}  - contenuto lungo {len(content)}")
-                    flat_inputs.append(
-                        [
-                            SystemMessage(content=system_prompt),
-                            HumanMessage(
-                                content=f"{user_prompt} titolo articolo cui appartiene il comma:'{art['titolo']}';"
-                                + f"contenuto del sottocomma: '{content}';"
-                                + f"identificativo del sottocomma: '{sottocomma.get('identificativo', '')}';"
-                                + f"flag del sottocomma: '{sottocomma.get('flag', '')}'"
-                            ),
-                        ]
-                    )
+                    # words = content.split()
+                    # if len(words) > MAX_CONTENT_WORDS:
+                    #     logger.warning("Truncating sottocomma %s from %d to %d words", sottocomma.get("identificativo", ""), len(words), MAX_CONTENT_WORDS)
+                    #     content = " ".join(words[:MAX_CONTENT_WORDS])
+                    chunks = _chunk_content(content, MAX_CHUNK_WORDS)
+                    if len(chunks) > 1:
+                        logger.info(
+                            "Sottocomma %s split into %d chunks (%d words total)",
+                            sottocomma.get("identificativo", ""),
+                            len(chunks),
+                            len(content.split()),
+                        )
+                    debug_log.append(f"          --> Sottocomma {sottocomma.get('identificativo', '')} di articolo {art['titolo']}  - contenuto lungo {len(content)} - chunks: {len(chunks)}")
+                    for chunk in chunks:
+                        flat_inputs.append(
+                            [
+                                SystemMessage(content=system_prompt),
+                                HumanMessage(
+                                    content=f"{user_prompt} titolo articolo cui appartiene il comma:'{art['titolo']}';"
+                                    + f"contenuto del sottocomma: '{chunk}';"
+                                    + f"identificativo del sottocomma: '{sottocomma.get('identificativo', '')}';"
+                                    + f"flag del sottocomma: '{sottocomma.get('flag', '')}'"
+                                ),
+                            ]
+                        )
+                        comma_indices.append(comma_idx)
+                    comma_idx += 1
             else:
                 content = comma.get("contenuto", "").strip()
                 if not content_ok_for_llm(
@@ -167,94 +230,143 @@ async def analisi_parallel(
                         "Skipping empty comma: id=%s", comma.get("identificativo", "")
                     )
                     continue
-                words = content.split()
-                if len(words) > MAX_CONTENT_WORDS:
-                    logger.warning("Truncating comma %s from %d to %d words", comma.get("identificativo", ""), len(words), MAX_CONTENT_WORDS)
-                    content = " ".join(words[:MAX_CONTENT_WORDS])
-                debug_log.append(f"          --> Comma {comma.get('identificativo', '')} di articolo {art['titolo']}  - contenuto lungo {len(content)}")
-                flat_inputs.append(
-                    [
-                        SystemMessage(content=system_prompt),
-                        HumanMessage(
-                            content=f"{user_prompt} titolo articolo cui appartiene il comma:'{art['titolo']}';"
-                            + f"contenuto del comma: '{content}';"
-                            + f"identificativo del comma: '{comma.get('identificativo', '')}';"
-                            + f"flag del comma: 'False'"
-                        ),
-                    ]
-                )
+                # words = content.split()
+                # if len(words) > MAX_CONTENT_WORDS:
+                #     logger.warning("Truncating comma %s from %d to %d words", comma.get("identificativo", ""), len(words), MAX_CONTENT_WORDS)
+                #     content = " ".join(words[:MAX_CONTENT_WORDS])
+                chunks = _chunk_content(content, MAX_CHUNK_WORDS)
+                if len(chunks) > 1:
+                    logger.info(
+                        "Comma %s split into %d chunks (%d words total)",
+                        comma.get("identificativo", ""),
+                        len(chunks),
+                        len(content.split()),
+                    )
+                debug_log.append(f"          --> Comma {comma.get('identificativo', '')} di articolo {art['titolo']}  - contenuto lungo {len(content)} - chunks: {len(chunks)}")
+                for chunk in chunks:
+                    flat_inputs.append(
+                        [
+                            SystemMessage(content=system_prompt),
+                            HumanMessage(
+                                content=f"{user_prompt} titolo articolo cui appartiene il comma:'{art['titolo']}';"
+                                + f"contenuto del comma: '{chunk}';"
+                                + f"identificativo del comma: '{comma.get('identificativo', '')}';"
+                                + f"flag del comma: 'False'"
+                            ),
+                        ]
+                    )
+                    comma_indices.append(comma_idx)
+                comma_idx += 1
 
-    total_items = len(flat_inputs)
+    total_chunks = len(flat_inputs)
+    total_commas = comma_idx
 
     token_counts = [len(msgs[-1].content.split()) for msgs in flat_inputs]
     if token_counts:
         logger.info(
-            "LLM batch stats — requests: %d, tokens/req: min=%d avg=%d max=%d, concurrency: %d",
-            total_items,
+            "LLM batch stats — commas: %d, chunks: %d, tokens/chunk: min=%d avg=%d max=%d",
+            total_commas,
+            total_chunks,
             min(token_counts),
             sum(token_counts) // len(token_counts),
             max(token_counts),
-            MAX_CONCURRENCY,
         )
 
-    print("     - Analisi_parallel 🥔🥔🥔", total_items)
+    print("     - Analisi_parallel 🥔🥔🥔", total_commas, f"({total_chunks} chunks)")
 
-    # 2️⃣  Parallel call with automatic fallback -----------------
-    cfg = RunnableConfig(max_concurrency=MAX_CONCURRENCY)
-    if total_items == 0:
-        results = []
+    # 2️⃣  LLM calls — sequential with per-call timing -----------------
+    if total_chunks == 0:
+        raw_results = []
     else:
-        try:
-            t0 = time.time()
-            results = await _invoke_with_fallback_batch(
-                _get_structured_llm(),
-                _get_structured_llm_fallback(),
-                flat_inputs,
-                cfg,
-            )
-            elapsed = time.time() - t0
-            logger.info(
-                "LLM batch completed — %d requests in %.1fs (avg %.1fs/req)",
-                total_items, elapsed, elapsed / total_items,
-            )
-        except ContentFilterFinishReasonError:
-            logger.warning(
-                "Content filter hit on batch – falling back to one-by-one processing"
-            )
-            llm = _get_structured_llm()
-            results = []
-            for i, inp in enumerate(flat_inputs):
+        llm          = _get_structured_llm()
+        llm_fallback = _get_structured_llm_fallback()
+        raw_results  = []
+        call_times:  list[float] = []
+        gap_times:   list[float] = []
+        last_end:    float | None = None
+
+        batch_start = time.time()
+
+        for i, inp in enumerate(flat_inputs):
+            # Measure gap since last call ended
+            if last_end is not None:
+                gap = time.time() - last_end
+                gap_times.append(gap)
+
+            words = len(inp[-1].content.split())
+            t_call = time.time()
+            try:
+                result = await llm.ainvoke(inp)
+            except (RateLimitError, APITimeoutError, InternalServerError) as e:
+                logger.warning("Chunk %d/%d failed on primary (%s) — trying fallback", i + 1, total_chunks, e)
                 try:
-                    r = await llm.ainvoke(inp)
-                    results.append(r)
-                except ContentFilterFinishReasonError:
-                    logger.warning(f"Content filter blocked item {i}, using default")
-                    results.append(
-                        Analisi_Paragrafo(
-                            riferimento_articolo="",
-                            requirement="[Content filter: comma non analizzabile]",
-                            core_text="",
-                            search_text="",
-                            pattern_type="altro",
-                        )
+                    result = await llm_fallback.ainvoke(inp)
+                except Exception as e2:
+                    logger.warning("Chunk %d/%d failed on fallback (%s) — using default", i + 1, total_chunks, e2)
+                    result = Analisi_Paragrafo(
+                        requirement="[Errore analisi comma]",
+                        core_text="", search_text="", pattern_type="altro",
                     )
-                except Exception as e:
-                    logger.warning(f"Item {i} failed ({e}), using default")
-                    results.append(
-                        Analisi_Paragrafo(
-                            riferimento_articolo="",
-                            requirement="[Errore analisi comma]",
-                            core_text="",
-                            search_text="",
-                            pattern_type="altro",
-                        )
-                    )
+            except ContentFilterFinishReasonError:
+                logger.warning("Chunk %d/%d blocked by content filter — using default", i + 1, total_chunks)
+                result = Analisi_Paragrafo(
+                    requirement="[Content filter: comma non analizzabile]",
+                    core_text="", search_text="", pattern_type="altro",
+                )
+            except Exception as e:
+                logger.warning("Chunk %d/%d unexpected error (%s) — using default", i + 1, total_chunks, e)
+                result = Analisi_Paragrafo(
+                    requirement="[Errore analisi comma]",
+                    core_text="", search_text="", pattern_type="altro",
+                )
+
+            elapsed_call = time.time() - t_call
+            last_end = time.time()
+            call_times.append(elapsed_call)
+            raw_results.append(result)
+
+            logger.info(
+                "LLM chunk %d/%d — words: %d, time: %.1fs%s",
+                i + 1,
+                total_chunks,
+                words,
+                elapsed_call,
+                f", gap_before: {gap_times[-1]:.2f}s" if gap_times else "",
+            )
+
+        total_elapsed = time.time() - batch_start
+        logger.info(
+            "LLM batch done — %d chunks in %.1fs | call: min=%.1fs avg=%.1fs max=%.1fs | gap: min=%.2fs avg=%.2fs max=%.2fs",
+            total_chunks,
+            total_elapsed,
+            min(call_times), sum(call_times) / len(call_times), max(call_times),
+            min(gap_times) if gap_times else 0,
+            sum(gap_times) / len(gap_times) if gap_times else 0,
+            max(gap_times) if gap_times else 0,
+        )
+
+    # 3️⃣  Merge chunks → one result per comma ---------------------------
+    chunks_by_comma: dict[int, list[Analisi_Paragrafo]] = defaultdict(list)
+    for i, result in enumerate(raw_results):
+        chunks_by_comma[comma_indices[i]].append(result)
+
+    results: list[Analisi_Paragrafo] = [
+        _merge_chunk_results(chunks_by_comma[idx])
+        for idx in range(total_commas)
+    ]
+
+    chunked_count = sum(1 for idx in range(total_commas) if len(chunks_by_comma[idx]) > 1)
+    if chunked_count:
+        logger.info(
+            "Chunk merging done — %d comma(s) were split and merged back", chunked_count
+        )
 
     dump_mode = "json" if lex_package_is_installed() else None
     dicts: list[dict] = [
         x.model_dump(mode=dump_mode, exclude_none=True) for x in results
     ]
-    # 3️⃣  Ricomposizione -----------------------------------------
+
+    # 4️⃣  Ricomposizione -----------------------------------------
 
     counter = 0
     for a in articoli:

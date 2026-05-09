@@ -59,6 +59,27 @@ WATCH_DIR = Path(os.environ.get("WATCH_DIR", "/opt/sunnitai-be/inbox"))
 POLL_INTERVAL = int(os.environ.get("WATCHER_POLL_SECONDS", "10"))
 
 
+def _wait_for_file_stable(path: Path, checks: int = 3, interval: float = 2.0) -> bool:
+    """
+    Return True once the file size has not changed for *checks* consecutive
+    polls spaced *interval* seconds apart.  Returns False if the file disappears.
+    """
+    last_size = -1
+    stable_count = 0
+    while stable_count < checks:
+        if not path.exists():
+            return False
+        size = path.stat().st_size
+        if size == last_size:
+            stable_count += 1
+        else:
+            stable_count = 0
+            last_size = size
+        if stable_count < checks:
+            time.sleep(interval)
+    return True
+
+
 def _sha256_file(path: Path) -> str:
     h = hashlib.sha256()
     with open(path, "rb") as f:
@@ -187,7 +208,11 @@ async def run_watcher():
             for pdf in current:
                 if pdf.name not in seen:
                     seen.add(pdf.name)
-                    logger.info("New PDF detected: %s", pdf.name)
+                    logger.info("New PDF detected: %s — waiting for stable size...", pdf.name)
+                    if not _wait_for_file_stable(pdf):
+                        logger.warning("File %s disappeared before processing — skipping", pdf.name)
+                        seen.discard(pdf.name)
+                        continue
                     await process_pdf(pdf, done_dir, failed_dir)
                     # After processing, file has been moved — remove from seen
                     # so a file with the same name can be reprocessed later

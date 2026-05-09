@@ -111,7 +111,7 @@ def build_chat_model(
         kwargs["base_url"] = base_url
 
     model = ChatOpenAI(**kwargs)
-    logger.info("LLM client timeout (from framework): %s")
+    logger.info("LLM client timeout (from framework): %s", kwargs.get("request_timeout"))
     return model
 
 
