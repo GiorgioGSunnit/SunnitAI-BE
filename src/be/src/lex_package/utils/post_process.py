@@ -288,7 +288,7 @@ def post_process_ingestion(document_hash: str) -> dict[str, str]:
             "step3":  "N embeddings generated" | "error: ...",
         }
     """
-    logger.info("post_process: starting for document_hash=%s", document_hash)
+    logger.info("post_process_ingestion START — document_hash=%s", document_hash)
     summary: dict[str, str] = {}
 
     try:
@@ -318,10 +318,48 @@ def post_process_ingestion(document_hash: str) -> dict[str, str]:
 
             summary["step1"]  = _step1_set_properties(session, document_hash)
             summary["step2"]  = _step2_relabel(session, document_hash)
+
+            # ── Fix 3 — Verify relabeling completed
+            try:
+                remaining = session.run(
+                    """
+                    MATCH (n)
+                    WHERE n.hash = $hash OR n.id CONTAINS $hash
+                    UNWIND labels(n) AS label
+                    WITH label WHERE label = toUpper(label)
+                    RETURN count(*) AS uppercase_remaining
+                    """,
+                    hash=document_hash,
+                ).single()
+                count = remaining["uppercase_remaining"] if remaining else 0
+                if count > 0:
+                    logger.warning("post_process: relabeling incomplete — %d uppercase nodes still exist for %s", count, document_hash)
+                else:
+                    logger.info("post_process: relabeling verified — no uppercase nodes remaining for %s", document_hash)
+            except Exception as exc:
+                logger.error("post_process: relabeling verification failed: %s", exc)
+
+            # ── Fix 4 — Verify sections are linked to Document node
+            try:
+                result = session.run(
+                    """
+                    MATCH (d:Document)-[:CONTAINS]->(s:Section)
+                    WHERE d.hash = $hash OR d.id CONTAINS $hash
+                    RETURN count(s) AS section_count
+                    """,
+                    hash=document_hash,
+                ).single()
+                count = result["section_count"] if result else 0
+                logger.info("post_process: sections linked to Document node: %d", count)
+                if count == 0:
+                    logger.warning("post_process: no sections linked to Document node for %s — CONTAINS relationships may be on wrong node", document_hash)
+            except Exception as exc:
+                logger.error("post_process: section verification failed: %s", exc)
+
             summary["step2b"] = _step2b_fix_section_properties(session, document_hash)
             summary["step3"]  = _step3_generate_embeddings(session, document_hash)
     finally:
         driver.close()
 
-    logger.info("post_process: completed — %s", summary)
+    logger.info("post_process_ingestion COMPLETE — document_hash=%s summary=%s", document_hash, summary)
     return summary

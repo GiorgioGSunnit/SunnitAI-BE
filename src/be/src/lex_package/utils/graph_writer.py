@@ -113,17 +113,57 @@ def _write_nodes_batched(session, nodes: list[dict]) -> int:
         props["id"] = node_id  # ensure id is in the props map for SET +=
         by_label[label_str].append({"id": node_id, "props": props})
 
+    # Pre-check only applies to LEGAL_DOC: its PascalCase equivalent (Document) has a
+    # uniqueness constraint, so creating a duplicate LEGAL_DOC node and then trying to
+    # add the Document label in post_process causes a constraint violation.
+    # All other labels (e.g. DOCUMENT_SECTION) must use normal MERGE so that
+    # post_process Step 0 can delete old relabeled nodes and Steps 1-3 can process
+    # the freshly written nodes.
+    _PRECHECKED_LABELS = {"LEGAL_DOC"}
+
     total = 0
     for label_str, items in by_label.items():
         for i in range(0, len(items), _BATCH_SIZE):
             batch = items[i : i + _BATCH_SIZE]
-            session.run(
-                f"""
-                UNWIND $batch AS row
-                MERGE (n:{label_str} {{id: row.id}})
-                SET n += row.props
-                """,
-                batch=batch,
+
+            if label_str in _PRECHECKED_LABELS:
+                # Check which ids already exist under any label (e.g. relabeled to Document)
+                ids = [row["id"] for row in batch]
+                existing = session.run(
+                    "MATCH (n) WHERE n.id IN $ids RETURN n.id AS id",
+                    ids=ids,
+                ).data()
+                existing_ids = {r["id"] for r in existing}
+                new_batch = [row for row in batch if row["id"] not in existing_ids]
+                update_batch = [row for row in batch if row["id"] in existing_ids]
+            else:
+                new_batch = batch
+                update_batch = []
+
+            if new_batch:
+                session.run(
+                    f"""
+                    UNWIND $batch AS row
+                    MERGE (n:{label_str} {{id: row.id}})
+                    SET n += row.props
+                    """,
+                    batch=new_batch,
+                )
+
+            if update_batch:
+                session.run(
+                    """
+                    UNWIND $batch AS row
+                    MATCH (n {id: row.id})
+                    SET n += row.props
+                    """,
+                    batch=update_batch,
+                )
+
+            skipped = len(update_batch)
+            logger.info(
+                "graph_writer: wrote %d nodes with label %s, skipped %d existing",
+                len(new_batch), label_str, skipped,
             )
             total += len(batch)
 
