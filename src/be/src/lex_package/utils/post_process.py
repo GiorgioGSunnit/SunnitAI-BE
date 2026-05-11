@@ -281,6 +281,7 @@ def post_process_ingestion(document_hash: str) -> dict[str, str]:
 
     Returns:
         {
+            "step0":  "ok" | "error: ...",
             "step1":  "ok" | "error: ...",
             "step2":  "ok" | "error: ...",
             "step2b": "ok" | "error: ...",
@@ -294,11 +295,27 @@ def post_process_ingestion(document_hash: str) -> dict[str, str]:
         driver = _get_driver()
     except Exception as exc:
         logger.error("post_process: cannot connect to Neo4J: %s", exc)
-        return {"step1": f"error: {exc}", "step2": f"error: {exc}", "step2b": f"error: {exc}", "step3": f"error: {exc}"}
+        return {"step0": f"error: {exc}", "step1": f"error: {exc}", "step2": f"error: {exc}", "step2b": f"error: {exc}", "step3": f"error: {exc}"}
 
     database = os.environ.get("NEO4J_DATABASE", "neo4j")
     try:
         with driver.session(database=database) as session:
+            # ── Step 0 — Delete existing sections to prevent duplicates on re-ingestion
+            try:
+                session.run(
+                    """
+                    MATCH (d)-[:CONTAINS]->(s:Section)
+                    WHERE d.hash = $document_hash
+                    DETACH DELETE s
+                    """,
+                    document_hash=document_hash,
+                )
+                logger.info("post_process step0: deleted existing sections for document %s", document_hash)
+                summary["step0"] = "ok"
+            except Exception as exc:
+                logger.error("post_process step0 failed: %s", exc)
+                summary["step0"] = f"error: {exc}"
+
             summary["step1"]  = _step1_set_properties(session, document_hash)
             summary["step2"]  = _step2_relabel(session, document_hash)
             summary["step2b"] = _step2b_fix_section_properties(session, document_hash)
