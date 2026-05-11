@@ -4,6 +4,7 @@ Post-ingestion processing for Neo4j graph data.
 Called after every successful document ingestion to:
   1. Set required properties on DOCUMENT_SECTION nodes (before relabeling)
   2. Relabel uppercase nodes to PascalCase (scoped to current document)
+  2b. Fix Section node name and abstract, clear embeddings for re-generation
   3. Generate embeddings for new Section nodes using sentence-transformers
 
 Each step is wrapped in try/except — a failure in one step does not abort
@@ -130,26 +131,97 @@ def _step2_relabel(session, document_hash: str) -> str:
         return f"error: {exc}"
 
 
+# ── Step 2b ────────────────────────────────────────────────────────────────────
+
+def _step2b_fix_section_properties(session, document_hash: str) -> str:
+    """
+    Fix name and abstract on Section nodes after relabeling:
+    - name: replace "0" with a sequential index based on elementId order
+    - abstract: strip noise prefixes like "0 Testo significativo:"
+    - clear embeddings so Step 3 re-generates them with clean text
+    """
+    try:
+        # Fix name — sequential numbering ordered by elementId
+        session.run(
+            """
+            MATCH (d:Document)-[:CONTAINS]->(s:Section)
+            WHERE d.hash = $document_hash
+            WITH s ORDER BY elementId(s)
+            WITH collect(s) AS sections
+            UNWIND range(0, size(sections)-1) AS i
+            WITH sections[i] AS s, i+1 AS idx
+            SET s.name = toString(idx)
+            """,
+            document_hash=document_hash,
+        )
+
+        # Fix abstract — strip noise text
+        session.run(
+            """
+            MATCH (d:Document)-[:CONTAINS]->(s:Section)
+            WHERE d.hash = $document_hash
+            SET s.abstract = trim(
+                replace(
+                    replace(
+                        replace(s.abstract, "Testo significativo:", ""),
+                        "0 ", ""
+                    ),
+                    "  ", " "
+                )
+            )
+            """,
+            document_hash=document_hash,
+        )
+
+        # Fall back to plain_text if abstract is too short after cleaning
+        session.run(
+            """
+            MATCH (d:Document)-[:CONTAINS]->(s:Section)
+            WHERE d.hash = $document_hash
+              AND size(trim(s.abstract)) < 20
+            SET s.abstract = left(s.plain_text, 200)
+            """,
+            document_hash=document_hash,
+        )
+
+        # Clear embeddings so Step 3 re-generates with clean text
+        session.run(
+            """
+            MATCH (d:Document)-[:CONTAINS]->(s:Section)
+            WHERE d.hash = $document_hash
+            REMOVE s.embedding
+            """,
+            document_hash=document_hash,
+        )
+
+        logger.info("post_process step2b: fixed name/abstract and cleared embeddings for document %s", document_hash)
+        return "ok"
+    except Exception as exc:
+        logger.error("post_process step2b failed: %s", exc)
+        return f"error: {exc}"
+
+
 # ── Step 3 ─────────────────────────────────────────────────────────────────────
 
-def _step3_generate_embeddings(session) -> str:
+def _step3_generate_embeddings(session, document_hash: str) -> str:
     """
-    Generate embeddings for all Section nodes that have plain_text but no
-    embedding yet. Naturally scoped to new nodes — existing ones already have
-    embeddings from previous runs.
+    Generate embeddings for Section nodes belonging to the current document
+    that have plain_text but no embedding (step 2b cleared them before this runs).
     """
     try:
         from sentence_transformers import SentenceTransformer
 
         result = session.run(
             """
-            MATCH (s:Section)
-            WHERE s.embedding IS NULL
+            MATCH (d:Document)-[:CONTAINS]->(s:Section)
+            WHERE d.hash = $document_hash
+              AND s.embedding IS NULL
               AND s.plain_text IS NOT NULL
               AND s.plain_text <> ""
             RETURN elementId(s) AS element_id,
                    coalesce(s.abstract, "") + " " + coalesce(s.plain_text, "") AS text
-            """
+            """,
+            document_hash=document_hash,
         )
         nodes = result.data()
 
@@ -200,9 +272,10 @@ def post_process_ingestion(document_hash: str) -> dict[str, str]:
 
     Returns:
         {
-            "step1": "ok" | "error: ...",
-            "step2": "ok" | "error: ...",
-            "step3": "N embeddings generated" | "error: ...",
+            "step1":  "ok" | "error: ...",
+            "step2":  "ok" | "error: ...",
+            "step2b": "ok" | "error: ...",
+            "step3":  "N embeddings generated" | "error: ...",
         }
     """
     logger.info("post_process: starting for document_hash=%s", document_hash)
@@ -212,14 +285,15 @@ def post_process_ingestion(document_hash: str) -> dict[str, str]:
         driver = _get_driver()
     except Exception as exc:
         logger.error("post_process: cannot connect to Neo4J: %s", exc)
-        return {"step1": f"error: {exc}", "step2": f"error: {exc}", "step3": f"error: {exc}"}
+        return {"step1": f"error: {exc}", "step2": f"error: {exc}", "step2b": f"error: {exc}", "step3": f"error: {exc}"}
 
     database = os.environ.get("NEO4J_DATABASE", "neo4j")
     try:
         with driver.session(database=database) as session:
-            summary["step1"] = _step1_set_properties(session, document_hash)
-            summary["step2"] = _step2_relabel(session, document_hash)
-            summary["step3"] = _step3_generate_embeddings(session)
+            summary["step1"]  = _step1_set_properties(session, document_hash)
+            summary["step2"]  = _step2_relabel(session, document_hash)
+            summary["step2b"] = _step2b_fix_section_properties(session, document_hash)
+            summary["step3"]  = _step3_generate_embeddings(session, document_hash)
     finally:
         driver.close()
 
