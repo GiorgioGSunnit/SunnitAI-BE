@@ -12,6 +12,7 @@ from .parsing_utils.parser_boe import parser_boe
 from .parsing_utils.parser_gazzetta_ue import parser_gazzetta_ue
 from .parsing_utils.parser_annex_tabular import parser_annex_tabular
 from .parsing_utils.parser_general import parser_general, parts_to_articoli
+from .parsing_utils.parser_fallback_chunks import parser_fallback_chunks
 from .parsing_utils.document_profiler import profile_document
 from .parsing_utils.document_part import DocumentPart
 
@@ -230,6 +231,22 @@ def parse(
                 else:
                     print("[INFO] No index found, using parser_contenuto as final fallback")
                     articoli = parser_contenuto(str(pdf_path))
+
+    # ── Final fallback: sliding-window chunks ─────────────────────────────
+    if not articoli:
+        import fitz
+        import logging
+        _logger = logging.getLogger(__name__)
+        doc = fitz.open(str(pdf_path))
+        full_text = "\n".join(page.get_text() for page in doc)
+        doc.close()
+        if full_text.strip():
+            _logger.warning(
+                "Using generic chunk fallback for document %s — no structural parser matched",
+                pdf_name,
+            )
+            print(f"[WARN] Using generic chunk fallback for document {pdf_name} — no structural parser matched")
+            articoli = parser_fallback_chunks(full_text)
 
     # ── Phase 4: Convert articoli → parts for Part-B readiness ───────────
     if articoli:

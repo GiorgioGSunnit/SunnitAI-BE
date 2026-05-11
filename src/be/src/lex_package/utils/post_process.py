@@ -284,6 +284,7 @@ def post_process_ingestion(document_hash: str) -> dict[str, str]:
             "step0":  "ok" | "error: ...",
             "step1":  "ok" | "error: ...",
             "step2":  "ok" | "error: ...",
+            "step2c": "ok" | "repaired N" | "error: ...",
             "step2b": "ok" | "error: ...",
             "step3":  "N embeddings generated" | "error: ...",
         }
@@ -355,6 +356,30 @@ def post_process_ingestion(document_hash: str) -> dict[str, str]:
                     logger.warning("post_process: no sections linked to Document node for %s — CONTAINS relationships may be on wrong node", document_hash)
             except Exception as exc:
                 logger.error("post_process: section verification failed: %s", exc)
+
+            # ── Step 2c — Repair missing CONTAINS relationships
+            try:
+                result = session.run(
+                    """
+                    MATCH (d:Document)
+                    WHERE d.hash = $document_hash OR d.id CONTAINS $document_hash
+                    MATCH (s:Section)
+                    WHERE s.id CONTAINS $document_hash
+                      AND NOT EXISTS { MATCH (d)-[:CONTAINS]->(s) }
+                    MERGE (d)-[:CONTAINS]->(s)
+                    RETURN count(s) AS repaired
+                    """,
+                    document_hash=document_hash,
+                ).single()
+                repaired = result["repaired"] if result else 0
+                if repaired > 0:
+                    logger.warning("post_process step2c: repaired %d missing CONTAINS relationships for document %s", repaired, document_hash)
+                else:
+                    logger.info("post_process step2c: all CONTAINS relationships intact for document %s", document_hash)
+                summary["step2c"] = f"repaired {repaired}" if repaired > 0 else "ok"
+            except Exception as exc:
+                logger.error("post_process step2c failed: %s", exc)
+                summary["step2c"] = f"error: {exc}"
 
             summary["step2b"] = _step2b_fix_section_properties(session, document_hash)
             summary["step3"]  = _step3_generate_embeddings(session, document_hash)
