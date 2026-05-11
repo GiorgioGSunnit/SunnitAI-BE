@@ -4580,6 +4580,13 @@ def _run_full_pipeline_job(job_id: str, input_data: dict):
         finally:
             os.unlink(tmp_path)
 
+        # ── 5. Post-processing (relabel + embeddings) ─────────────────────────
+        if is_configured():
+            set_running(job_id, {"step": "post_processing", "progress": "5/5"})
+            from lex_package.utils.post_process import post_process_ingestion
+            pp_result = post_process_ingestion(doc_hash)
+            logger.info("Full pipeline job %s: post-processing result: %s", job_id, pp_result)
+
         set_completed(job_id, {
             "filename": file_name,
             "nodes_written": nodes_written,
