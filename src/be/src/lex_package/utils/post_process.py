@@ -106,20 +106,29 @@ def _step2_relabel(session, document_hash: str) -> str:
             # Already PascalCase or mixed — leave as-is
 
         relabeled = 0
+        skipped = 0
         for old_label, new_label in effective.items():
             if old_label == new_label:
                 continue
-            session.run(
-                f"""
-                MATCH (n:{old_label})
-                WHERE n.id CONTAINS $document_hash
-                REMOVE n:{old_label}
-                SET n:{new_label}
-                """,
-                document_hash=document_hash,
-            )
-            logger.debug("post_process step2: %s → %s", old_label, new_label)
-            relabeled += 1
+            try:
+                session.run(
+                    f"""
+                    MATCH (n:{old_label})
+                    WHERE n.id CONTAINS $document_hash
+                    REMOVE n:{old_label}
+                    SET n:{new_label}
+                    """,
+                    document_hash=document_hash,
+                )
+                logger.debug("post_process step2: %s → %s", old_label, new_label)
+                relabeled += 1
+            except Exception as exc:
+                # Constraint violation: node already has the target label from a previous run
+                logger.warning(
+                    "post_process step2: skipped %s → %s (constraint or error: %s)",
+                    old_label, new_label, exc,
+                )
+                skipped += 1
 
         logger.info(
             "post_process step2: relabeled %d label type(s) for document %s",
