@@ -4580,11 +4580,11 @@ def _run_full_pipeline_job(job_id: str, input_data: dict):
         finally:
             os.unlink(tmp_path)
 
-        # ── 5. Post-processing (relabel + embeddings) ─────────────────────────
+        # ── 5. Post-processing (relabel — fast steps only) ────────────────────
         if is_configured():
             set_running(job_id, {"step": "post_processing", "progress": "5/5"})
-            from lex_package.utils.post_process import post_process_ingestion
-            pp_result = post_process_ingestion(doc_hash)
+            from lex_package.utils.post_process import post_process_fast_steps, post_process_embeddings
+            pp_result = post_process_fast_steps(doc_hash)
             logger.info("Full pipeline job %s: post-processing result: %s", job_id, pp_result)
 
         set_completed(job_id, {
@@ -4593,6 +4593,11 @@ def _run_full_pipeline_job(job_id: str, input_data: dict):
             "relationships_written": rels_written,
             "neo4j_enabled": is_configured(),
         })
+
+        # ── 6. Embedding generation (background — does not block job completion) ─
+        if is_configured():
+            _job_executor.submit(post_process_embeddings, doc_hash)
+            logger.info("Full pipeline job %s: embedding generation submitted to background", job_id)
 
     except Exception as e:
         logger.error("Full pipeline job %s failed: %s", job_id, e)

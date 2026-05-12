@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -40,6 +41,21 @@ _CONSTRAINED_LABELS = [
 
 # Max nodes/relationships sent in a single UNWIND batch.
 _BATCH_SIZE = 500
+
+# Labels that skip the normal MERGE path and do a pre-existence check first.
+_PRECHECKED_LABELS = {"LEGAL_DOC"}
+
+# Cypher identifiers must be word-characters only — reject anything else
+# before it reaches an f-string query to prevent injection.
+_SAFE_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _validate_identifier(name: str, context: str) -> None:
+    """Raise ValueError if *name* is not a safe Cypher identifier."""
+    if not _SAFE_IDENTIFIER.match(name):
+        raise ValueError(
+            f"graph_writer: unsafe {context} identifier rejected: {name!r}"
+        )
 
 
 def is_configured() -> bool:
@@ -108,18 +124,20 @@ def _write_nodes_batched(session, nodes: list[dict]) -> int:
             logger.warning("graph_writer: skipping node without id: %s", node)
             continue
         labels = node.get("labels") or ["Node"]
+        # Validate every label part before it reaches an f-string query.
+        try:
+            for lbl in labels:
+                _validate_identifier(lbl, "label")
+        except ValueError as exc:
+            logger.warning("graph_writer: skipping node %s — %s", node_id, exc)
+            continue
         label_str = ":".join(labels)
         props = _clean_props(node.get("properties", {}))
         props["id"] = node_id  # ensure id is in the props map for SET +=
         by_label[label_str].append({"id": node_id, "props": props})
 
-    # Pre-check only applies to LEGAL_DOC: its PascalCase equivalent (Document) has a
-    # uniqueness constraint, so creating a duplicate LEGAL_DOC node and then trying to
-    # add the Document label in post_process causes a constraint violation.
-    # All other labels (e.g. DOCUMENT_SECTION) must use normal MERGE so that
-    # post_process Step 0 can delete old relabeled nodes and Steps 1-3 can process
-    # the freshly written nodes.
-    _PRECHECKED_LABELS = {"LEGAL_DOC"}
+    # _PRECHECKED_LABELS: pre-existence check before MERGE to avoid constraint
+    # violations when the node was already relabeled (e.g. LEGAL_DOC → Document).
 
     total = 0
     for label_str, items in by_label.items():
@@ -194,18 +212,32 @@ def _write_relationships_batched(session, relationships: list[dict]) -> int:
 
     total = 0
     for rel_type, items in by_type.items():
+        try:
+            _validate_identifier(rel_type, "relationship type")
+        except ValueError as exc:
+            logger.warning("graph_writer: skipping %d relationships — %s", len(items), exc)
+            continue
+
         for i in range(0, len(items), _BATCH_SIZE):
             batch = items[i : i + _BATCH_SIZE]
-            session.run(
+            result = session.run(
                 f"""
                 UNWIND $batch AS row
                 MATCH (a {{id: row.source_id}}), (b {{id: row.target_id}})
                 MERGE (a)-[r:{rel_type}]->(b)
                 SET r += row.props
+                RETURN count(*) AS written
                 """,
                 batch=batch,
             )
-            total += len(batch)
+            written = (result.single() or {}).get("written", 0)
+            skipped = len(batch) - written
+            if skipped:
+                logger.warning(
+                    "graph_writer: %d relationships skipped (missing nodes) for type %s",
+                    skipped, rel_type,
+                )
+            total += written
 
     return total
 
