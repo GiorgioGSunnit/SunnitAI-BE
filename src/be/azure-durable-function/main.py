@@ -7,9 +7,21 @@ uvicorn can serve it:
 
     uvicorn main:app --host 0.0.0.0 --port 7071
 """
+import logging
+
 import function_app  # noqa: F401 — side-effect: registers all routes
 
 from azure_func_compat import _fastapi_app as app  # noqa: F401
+
+
+# ── Suppress polling noise from uvicorn access logs ───────────────────────────
+# GET /api/job/<id> is polled every ~5s by the FE. At 4 concurrent clients
+# that's ~50 lines/minute of noise that buries real application logs.
+class _SuppressJobPolling(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        return "/api/job/" not in record.getMessage()
+
+logging.getLogger("uvicorn.access").addFilter(_SuppressJobPolling())
 
 
 @app.get("/api/health")

@@ -4530,12 +4530,16 @@ def _run_full_pipeline_job(job_id: str, input_data: dict):
     import hashlib
     import os
     import tempfile
+    import time
 
     try:
         file_content = base64.b64decode(input_data["file_content"])
         file_name    = input_data["filename"]
         doc_name     = os.path.splitext(file_name)[0]
         template_hint = input_data.get("template") or None
+
+        job_start = time.perf_counter()
+        logger.info("Full pipeline job %s START — file=%s", job_id, file_name)
 
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
             tmp.write(file_content)
@@ -4546,18 +4550,24 @@ def _run_full_pipeline_job(job_id: str, input_data: dict):
             set_running(job_id, {"step": "parsing_and_analysis", "progress": "1/4"})
             from lex_package.analisi import analisi, consolida_analisi
 
-            raw         = asyncio.run(analisi(tmp_path, file_name, template_hint=template_hint))
+            t = time.perf_counter()
+            raw          = asyncio.run(analisi(tmp_path, file_name, template_hint=template_hint))
             consolidated = asyncio.run(consolida_analisi(raw))
+            logger.info("Full pipeline job %s: step 1 (parse+LLM) done in %.1fs", job_id, time.perf_counter() - t)
 
             # ── 2. Flatten ────────────────────────────────────────────────────
             set_running(job_id, {"step": "flattening", "progress": "2/4"})
             from lex_package.utils.flatten import flatten_analisi_invertito, build_neo4j_graph_payload
 
+            t = time.perf_counter()
             flattened = flatten_analisi_invertito(consolidated)
+            logger.info("Full pipeline job %s: step 2 (flatten) done in %.1fs", job_id, time.perf_counter() - t)
 
             # ── 3. Build graph payload ────────────────────────────────────────
             set_running(job_id, {"step": "building_graph", "progress": "3/4"})
             doc_hash = hashlib.sha256(file_content).hexdigest()
+
+            t = time.perf_counter()
             payload  = build_neo4j_graph_payload(
                 flattened,
                 document_name=doc_name,
@@ -4565,6 +4575,7 @@ def _run_full_pipeline_job(job_id: str, input_data: dict):
                 file_name=file_name,
                 pdf_path=tmp_path,
             )
+            logger.info("Full pipeline job %s: step 3 (build graph) done in %.1fs", job_id, time.perf_counter() - t)
 
             # ── 4. Write to Neo4J ─────────────────────────────────────────────
             set_running(job_id, {"step": "writing_neo4j", "progress": "4/4"})
@@ -4572,10 +4583,11 @@ def _run_full_pipeline_job(job_id: str, input_data: dict):
 
             nodes_written, rels_written = 0, 0
             if is_configured():
+                t = time.perf_counter()
                 nodes_written, rels_written = write_graph_payload(payload)
                 logger.info(
-                    "Full pipeline job %s: wrote %d nodes and %d rels to Neo4J",
-                    job_id, nodes_written, rels_written,
+                    "Full pipeline job %s: step 4 (Neo4J write) done in %.1fs — %d nodes, %d rels",
+                    job_id, time.perf_counter() - t, nodes_written, rels_written,
                 )
             else:
                 logger.warning("Full pipeline job %s: NEO4J_URI not set — skipping DB write", job_id)
@@ -4587,8 +4599,13 @@ def _run_full_pipeline_job(job_id: str, input_data: dict):
         if is_configured():
             set_running(job_id, {"step": "post_processing", "progress": "5/5"})
             from lex_package.utils.post_process import post_process_fast_steps, post_process_embeddings
+
+            t = time.perf_counter()
             pp_result = post_process_fast_steps(doc_hash)
-            logger.info("Full pipeline job %s: post-processing result: %s", job_id, pp_result)
+            logger.info(
+                "Full pipeline job %s: step 5 (post-processing) done in %.1fs — %s",
+                job_id, time.perf_counter() - t, pp_result,
+            )
 
         set_completed(job_id, {
             "filename": file_name,
@@ -4596,6 +4613,7 @@ def _run_full_pipeline_job(job_id: str, input_data: dict):
             "relationships_written": rels_written,
             "neo4j_enabled": is_configured(),
         })
+        logger.info("Full pipeline job %s COMPLETE — total %.1fs", job_id, time.perf_counter() - job_start)
 
         # ── 6. Embedding generation (background — does not block job completion) ─
         if is_configured():
