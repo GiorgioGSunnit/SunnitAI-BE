@@ -9,6 +9,14 @@ uvicorn can serve it:
 """
 import logging
 
+# ── Configure root logger before anything else loads ─────────────────────────
+# Uvicorn only sets up its own loggers (uvicorn.*). Without this, all
+# application logger.info/error calls are silently discarded.
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(levelname)-8s %(name)s — %(message)s",
+)
+
 import function_app  # noqa: F401 — side-effect: registers all routes
 
 from azure_func_compat import _fastapi_app as app  # noqa: F401
