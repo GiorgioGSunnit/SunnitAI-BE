@@ -26,7 +26,9 @@ from concurrent.futures import ThreadPoolExecutor
 
 from job_store import (
     create_job,
+    decrement_active,
     get_job,
+    increment_active,
     set_completed,
     set_failed,
     set_running,
@@ -131,6 +133,7 @@ def get_job_status(req: func.HttpRequest) -> func.HttpResponse:
         "custom_status": job.get("custom_status"),
         "result": job.get("result"),
         "error": job.get("error"),
+        "queue_position": job.get("queue_position", 0) if job["runtimeStatus"] == "Pending" else None,
     }
     return func.HttpResponse(
         json.dumps(body), status_code=200, mimetype="application/json"
@@ -4602,6 +4605,8 @@ def _run_full_pipeline_job(job_id: str, input_data: dict):
     except Exception as e:
         logger.error("Full pipeline job %s failed: %s", job_id, e)
         set_failed(job_id, str(e))
+    finally:
+        decrement_active("pipeline")
 
 
 @app.route(route="pipeline", methods=["POST"])
@@ -4661,10 +4666,18 @@ def ingest_full_pipeline(req: func.HttpRequest) -> func.HttpResponse:
             "template": req.form.get("template"),
         }
 
-        job_id = create_job("pipeline", "Pending")
-        _job_executor.submit(_run_full_pipeline_job, job_id, input_data)
+        queue_position = increment_active("pipeline")
+        try:
+            job_id = create_job("pipeline", "Pending", queue_position=queue_position)
+            _job_executor.submit(_run_full_pipeline_job, job_id, input_data)
+        except Exception:
+            decrement_active("pipeline")
+            raise
 
-        logger.info("pipeline: queued job %s for '%s'", job_id, file.filename)
+        logger.info(
+            "pipeline: queued job %s for '%s' (queue_position=%d)",
+            job_id, file.filename, queue_position,
+        )
 
         return func.HttpResponse(
             body=json.dumps({
@@ -4672,6 +4685,7 @@ def ingest_full_pipeline(req: func.HttpRequest) -> func.HttpResponse:
                 "statusQueryGetUri": f"/api/job/{job_id}",
                 "status": "Pending",
                 "filename": file.filename,
+                "queue_position": queue_position,
             }),
             status_code=202,
             mimetype="application/json",

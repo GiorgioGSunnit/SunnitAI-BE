@@ -12,6 +12,33 @@ from datetime import datetime, timezone
 _jobs: dict[str, dict] = {}
 _lock = threading.Lock()
 
+# ── Active-job counters (in-memory, single-process) ───────────────────────────
+# Tracks how many jobs of each type are currently Pending or Running.
+# Used to compute queue_position at submission time.
+_active_counts: dict[str, int] = {}
+_counts_lock = threading.Lock()
+
+
+def increment_active(job_type: str) -> int:
+    """
+    Increment the active count for *job_type* and return the value BEFORE
+    the increment — i.e. the number of jobs already ahead in the queue.
+    Call this immediately before submitting a job to the executor.
+    """
+    with _counts_lock:
+        pos = _active_counts.get(job_type, 0)
+        _active_counts[job_type] = pos + 1
+        return pos
+
+
+def decrement_active(job_type: str) -> None:
+    """
+    Decrement the active count for *job_type*.
+    Call this in the finally block of every job worker function.
+    """
+    with _counts_lock:
+        _active_counts[job_type] = max(0, _active_counts.get(job_type, 0) - 1)
+
 
 def _bsc():
     """Lazy import per evitare dipendenze circolari e per ambienti senza utils."""
@@ -31,6 +58,7 @@ def _job_payload(
     error=None,
     custom_status=None,
     created_at: str = None,
+    queue_position: int = 0,
 ) -> dict:
     if created_at is None:
         created_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -43,6 +71,7 @@ def _job_payload(
         "error": error,
         "custom_status": custom_status,
         "created_at": created_at,
+        "queue_position": queue_position,
     }
 
 
@@ -73,9 +102,9 @@ def _write_job_to_blob(job: dict) -> bool:
         return False
 
 
-def create_job(job_type: str, initial_status: str = "Pending") -> str:
+def create_job(job_type: str, initial_status: str = "Pending", queue_position: int = 0) -> str:
     job_id = str(uuid.uuid4())
-    job = _job_payload(job_id, job_type, status=initial_status)
+    job = _job_payload(job_id, job_type, status=initial_status, queue_position=queue_position)
     if _write_job_to_blob(job):
         return job_id
     with _lock:
