@@ -31,6 +31,10 @@ class _SuppressJobPolling(logging.Filter):
 
 logging.getLogger("uvicorn.access").addFilter(_SuppressJobPolling())
 
+# Suppress Neo4J "constraint already exists" INFO notifications — expected after
+# the first ingest but noisy on every subsequent write.
+logging.getLogger("neo4j.notifications").setLevel(logging.WARNING)
+
 
 @app.get("/api/health")
 async def health():

@@ -232,10 +232,17 @@ def _write_relationships_batched(session, relationships: list[dict]) -> int:
             )
             written = (result.single() or {}).get("written", 0)
             skipped = len(batch) - written
-            if skipped:
+            if skipped > 0:
                 logger.warning(
                     "graph_writer: %d relationships skipped (missing nodes) for type %s",
                     skipped, rel_type,
+                )
+            elif skipped < 0:
+                # count(*) > len(batch): cartesian product matched some nodes
+                # under multiple labels — relationships still written correctly.
+                logger.debug(
+                    "graph_writer: type %s written=%d batch=%d (cartesian product hit)",
+                    rel_type, written, len(batch),
                 )
             total += written
 
