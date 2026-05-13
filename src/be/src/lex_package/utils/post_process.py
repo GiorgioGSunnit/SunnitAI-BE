@@ -141,6 +141,31 @@ def _step2_relabel(session, document_hash: str) -> str:
         return f"error: {exc}"
 
 
+# ── Step 2b helpers ────────────────────────────────────────────────────────────
+
+def _clean_plain_text(text: str) -> str:
+    if not text or len(text) < 100:
+        return text
+
+    lines = text.split("\n")
+
+    # Find first "substantial" line — longer than 100 chars or
+    # starts a numbered list (1. 2. etc) or contains legal keywords
+    legal_keywords = [
+        "articolo", "comma", "legge", "decreto", "requisiti",
+        "regime", "soggetti", "contratto", "diritto", "obbligo",
+    ]
+
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if len(stripped) > 100:
+            return "\n".join(lines[i:]).strip()
+        if any(kw in stripped.lower() for kw in legal_keywords) and len(stripped) > 30:
+            return "\n".join(lines[i:]).strip()
+
+    return text
+
+
 # ── Step 2b ────────────────────────────────────────────────────────────────────
 
 def _step2b_fix_section_properties(session, document_hash: str) -> str:
@@ -193,6 +218,26 @@ def _step2b_fix_section_properties(session, document_hash: str) -> str:
             """,
             document_hash=document_hash,
         )
+
+        # Clean plain_text — strip short header/navigation lines in Python
+        rows = session.run(
+            """
+            MATCH (d:Document)-[:CONTAINS]->(s:Section)
+            WHERE d.hash = $document_hash
+              AND s.plain_text IS NOT NULL AND s.plain_text <> ""
+            RETURN elementId(s) AS eid, s.plain_text AS plain_text
+            """,
+            document_hash=document_hash,
+        ).data()
+        for row in rows:
+            cleaned = _clean_plain_text(row["plain_text"])
+            if cleaned != row["plain_text"]:
+                session.run(
+                    "MATCH (s) WHERE elementId(s) = $eid SET s.plain_text = $text",
+                    eid=row["eid"],
+                    text=cleaned,
+                )
+        logger.debug("post_process step2b: cleaned plain_text for %d sections", len(rows))
 
         # Clear embeddings so Step 3 re-generates with clean text
         session.run(
