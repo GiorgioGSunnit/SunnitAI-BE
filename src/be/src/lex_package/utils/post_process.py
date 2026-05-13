@@ -245,8 +245,8 @@ def _step3_generate_embeddings(session, document_hash: str) -> str:
         result = session.run(
             """
             MATCH (d:Document)-[:CONTAINS]->(s:Section)
-            WHERE d.hash = $document_hash
-              AND s.embedding IS NULL
+            WHERE (d.hash = $document_hash OR d.id CONTAINS $document_hash)
+              AND (s.embedding IS NULL OR size(s.embedding) = 0)
               AND s.plain_text IS NOT NULL
               AND s.plain_text <> ""
             RETURN elementId(s) AS element_id,
@@ -425,6 +425,10 @@ def post_process_embeddings(document_hash: str) -> str:
     database = os.environ.get("NEO4J_DATABASE", "neo4j")
     result = "error: unknown"
     try:
+        # Brief pause to ensure step 2b's cleared embeddings are committed
+        # and visible before step 3 queries for NULL/empty embeddings.
+        import time as _time
+        _time.sleep(1.0)
         with driver.session(database=database) as session:
             result = _step3_generate_embeddings(session, document_hash)
     except Exception as exc:
