@@ -274,75 +274,62 @@ async def analisi_parallel(
 
     print("     - Analisi_parallel 🥔🥔🥔", total_commas, f"({total_chunks} chunks)")
 
-    # 2️⃣  LLM calls — sequential with per-call timing -----------------
+    # 2️⃣  LLM calls — concurrent with semaphore --------------------------
     if total_chunks == 0:
         raw_results = []
     else:
+        import asyncio as _asyncio
+
         llm          = _get_structured_llm()
         llm_fallback = _get_structured_llm_fallback()
-        raw_results  = []
-        call_times:  list[float] = []
-        gap_times:   list[float] = []
-        last_end:    float | None = None
 
-        batch_start = time.time()
+        _semaphore = _asyncio.Semaphore(10)  # max 10 concurrent RunPod calls
+        call_times: list[float] = [0.0] * total_chunks
 
-        for i, inp in enumerate(flat_inputs):
-            # Measure gap since last call ended
-            if last_end is not None:
-                gap = time.time() - last_end
-                gap_times.append(gap)
-
+        async def _call_chunk(i: int, inp) -> Analisi_Paragrafo:
             words = len(inp[-1].content.split())
             t_call = time.time()
-            try:
-                result = await llm.ainvoke(inp)
-            except (RateLimitError, APITimeoutError, InternalServerError) as e:
-                logger.warning("Chunk %d/%d failed on primary (%s) — trying fallback", i + 1, total_chunks, e)
+            async with _semaphore:
                 try:
-                    result = await llm_fallback.ainvoke(inp)
-                except Exception as e2:
-                    logger.warning("Chunk %d/%d failed on fallback (%s) — using default", i + 1, total_chunks, e2)
+                    result = await llm.ainvoke(inp)
+                except (RateLimitError, APITimeoutError, InternalServerError) as e:
+                    logger.warning("Chunk %d/%d failed on primary (%s) — trying fallback", i + 1, total_chunks, e)
+                    try:
+                        result = await llm_fallback.ainvoke(inp)
+                    except Exception as e2:
+                        logger.warning("Chunk %d/%d failed on fallback (%s) — using default", i + 1, total_chunks, e2)
+                        result = Analisi_Paragrafo(
+                            requirement="[Errore analisi comma]",
+                            core_text="", search_text="", pattern_type="altro",
+                        )
+                except ContentFilterFinishReasonError:
+                    logger.warning("Chunk %d/%d blocked by content filter — using default", i + 1, total_chunks)
+                    result = Analisi_Paragrafo(
+                        requirement="[Content filter: comma non analizzabile]",
+                        core_text="", search_text="", pattern_type="altro",
+                    )
+                except Exception as e:
+                    logger.warning("Chunk %d/%d unexpected error (%s) — using default", i + 1, total_chunks, e)
                     result = Analisi_Paragrafo(
                         requirement="[Errore analisi comma]",
                         core_text="", search_text="", pattern_type="altro",
                     )
-            except ContentFilterFinishReasonError:
-                logger.warning("Chunk %d/%d blocked by content filter — using default", i + 1, total_chunks)
-                result = Analisi_Paragrafo(
-                    requirement="[Content filter: comma non analizzabile]",
-                    core_text="", search_text="", pattern_type="altro",
-                )
-            except Exception as e:
-                logger.warning("Chunk %d/%d unexpected error (%s) — using default", i + 1, total_chunks, e)
-                result = Analisi_Paragrafo(
-                    requirement="[Errore analisi comma]",
-                    core_text="", search_text="", pattern_type="altro",
-                )
 
             elapsed_call = time.time() - t_call
-            last_end = time.time()
-            call_times.append(elapsed_call)
-            raw_results.append(result)
+            call_times[i] = elapsed_call
+            logger.info("LLM chunk %d/%d — words: %d, time: %.1fs", i + 1, total_chunks, words, elapsed_call)
+            return result
 
-            logger.info(
-                "LLM chunk %d/%d — words: %d, time: %.1fs%s",
-                i + 1,
-                total_chunks,
-                words,
-                elapsed_call,
-                f", gap_before: {gap_times[-1]:.2f}s" if gap_times else "",
-            )
-
+        batch_start = time.time()
+        raw_results = list(await _asyncio.gather(
+            *[_call_chunk(i, inp) for i, inp in enumerate(flat_inputs)]
+        ))
         total_elapsed = time.time() - batch_start
         logger.info(
-            "LLM batch done — %d chunks in %.1fs | call: min=%.1fs avg=%.1fs max=%.1fs | gap: min=%.2fs avg=%.2fs max=%.2fs",
+            "LLM batch done — %d chunks in %.1fs (concurrent, semaphore=10) | call: min=%.1fs avg=%.1fs max=%.1fs",
             total_chunks,
             total_elapsed,
             min(call_times), sum(call_times) / len(call_times), max(call_times),
-            min(gap_times) if gap_times else 0,
-            sum(gap_times) / len(gap_times) if gap_times else 0,
-            max(gap_times) if gap_times else 0,
         )
 
     # 3️⃣  Merge chunks → one result per comma ---------------------------
