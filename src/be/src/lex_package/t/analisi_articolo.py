@@ -64,11 +64,6 @@ class Riferimento_emendativa(BaseModel):
 class Analisi_Paragrafo(BaseModel):
     """informazioni sul significato di un paragrafo in un articolo di legge"""
 
-    riferimento_articolo: Optional[str] = Field(
-        default=None,
-        description="se il titolo articolo contiene una parola simile a 'modifica' e il titolo di un documento, questo campo contiene il titolo del documento che viene modificato: ad esempio 'modifiche del regolamento pinco pallo (ue) 123' diventa 'regolamento pinco pallo (ue) 123'",
-    )
-
     requirement: Optional[str] = Field(
         default=None,
         description="il significato del comma espresso in una breve frase di non più di 100 parole, ottenuto dai punti focali del comma",

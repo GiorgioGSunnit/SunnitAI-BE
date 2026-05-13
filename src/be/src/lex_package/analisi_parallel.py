@@ -61,7 +61,7 @@ def _get_structured_llm_fallback():
 # Increase if you want fewer calls on longer documents; decrease for tighter
 # timeout safety. Re-enable truncation below if you need a hard cap instead.
 # ---------------------------------------------------------------------------
-MAX_CHUNK_WORDS = 400
+MAX_CHUNK_WORDS = 250
 
 # ---------------------------------------------------------------------------
 # Pattern priority for merging chunk results — higher wins.
@@ -98,7 +98,6 @@ def _merge_chunk_results(chunks: list[Analisi_Paragrafo]) -> Analisi_Paragrafo:
     - core_text    : non-empty values joined with " "
     - search_text  : non-empty values joined with " "
     - riferimenti  : union, deduplicated by (n_articolo, nome_documento)
-    - riferimento_articolo : first non-None value
     """
     if len(chunks) == 1:
         return chunks[0]
@@ -123,12 +122,7 @@ def _merge_chunk_results(chunks: list[Analisi_Paragrafo]) -> Analisi_Paragrafo:
                 seen_refs.add(key)
                 merged_refs.append(ref)
 
-    riferimento_articolo = next(
-        (c.riferimento_articolo for c in chunks if c.riferimento_articolo), None
-    )
-
     return Analisi_Paragrafo(
-        riferimento_articolo=riferimento_articolo,
         requirement="; ".join(requirements) if requirements else None,
         core_text=" ".join(core_texts) if core_texts else None,
         search_text=" ".join(search_texts) if search_texts else None,
@@ -286,43 +280,90 @@ async def analisi_parallel(
         semaphore = _asyncio.Semaphore(10)  # max 10 concurrent RunPod calls
         call_times: list[float] = []
 
-        async def _invoke_single(inp, i, llm, llm_fallback) -> Analisi_Paragrafo:
+        async def _invoke_with_fallback(inp, i, llm, llm_fallback) -> Analisi_Paragrafo:
             async with semaphore:
                 t_call = time.time()
-                try:
-                    result = await llm.ainvoke(inp)
-                except (RateLimitError, APITimeoutError, InternalServerError) as e:
-                    logger.warning("Chunk %d/%d failed on primary (%s) — trying fallback", i + 1, total_chunks, e)
+
+                # Attempt 1: structured output with exponential backoff (15s, then 25s)
+                for attempt, timeout_secs in enumerate([15, 25]):
                     try:
-                        result = await llm_fallback.ainvoke(inp)
-                    except Exception as e2:
-                        logger.warning("Chunk %d/%d failed on fallback (%s) — using default", i + 1, total_chunks, e2)
-                        result = Analisi_Paragrafo(
-                            requirement="[Errore analisi comma]",
+                        result = await _asyncio.wait_for(llm.ainvoke(inp), timeout=timeout_secs)
+                        elapsed = time.time() - t_call
+                        call_times.append(elapsed)
+                        logger.debug("Chunk %d/%d completed in %.2fs", i + 1, total_chunks, elapsed)
+                        return result
+                    except _asyncio.TimeoutError:
+                        logger.warning(
+                            "Chunk %d/%d structured attempt %d/2 timed out after %ds",
+                            i + 1, total_chunks, attempt + 1, timeout_secs,
+                        )
+                    except ContentFilterFinishReasonError:
+                        logger.warning("Chunk %d/%d blocked by content filter — using default", i + 1, total_chunks)
+                        elapsed = time.time() - t_call
+                        call_times.append(elapsed)
+                        return Analisi_Paragrafo(
+                            requirement="[Content filter: comma non analizzabile]",
                             core_text="", search_text="", pattern_type="altro",
                         )
-                except ContentFilterFinishReasonError:
-                    logger.warning("Chunk %d/%d blocked by content filter — using default", i + 1, total_chunks)
-                    result = Analisi_Paragrafo(
-                        requirement="[Content filter: comma non analizzabile]",
-                        core_text="", search_text="", pattern_type="altro",
+                    except Exception as e:
+                        logger.warning(
+                            "Chunk %d/%d structured attempt %d/2 failed (%s)",
+                            i + 1, total_chunks, attempt + 1, e,
+                        )
+                        break  # Don't retry on non-timeout errors
+
+                # Attempt 2: plain text prompt, 30s timeout on fallback model
+                logger.warning(
+                    "Chunk %d/%d structured output failed — trying plain text fallback",
+                    i + 1, total_chunks,
+                )
+                try:
+                    plain_prompt = [HumanMessage(content=(
+                        "Analizza questo testo legale e rispondi SOLO con questo formato:\n"
+                        "REQUIREMENT: [requisito principale in una frase]\n"
+                        "CORE_TEXT: [testo centrale]\n"
+                        "SEARCH_TEXT: [testo per ricerca]\n"
+                        "PATTERN_TYPE: [tipo: obbligo/divieto/facoltà/definizione/altro]\n"
+                        "RIFERIMENTI: [riferimenti normativi separati da virgola, o 'nessuno']\n\n"
+                        f"Testo: {inp[-1].content}"
+                    ))]
+                    raw = await _asyncio.wait_for(llm_fallback.ainvoke(plain_prompt), timeout=30.0)
+                    text = raw.content if hasattr(raw, "content") else str(raw)
+
+                    def _extract_field(label: str, src: str) -> str:
+                        for line in src.split("\n"):
+                            if line.startswith(label + ":"):
+                                return line[len(label) + 1:].strip()
+                        return ""
+
+                    elapsed = time.time() - t_call
+                    call_times.append(elapsed)
+                    logger.debug("Chunk %d/%d plain text fallback completed in %.2fs", i + 1, total_chunks, elapsed)
+                    return Analisi_Paragrafo(
+                        requirement=_extract_field("REQUIREMENT", text),
+                        core_text=_extract_field("CORE_TEXT", text),
+                        search_text=_extract_field("SEARCH_TEXT", text),
+                        pattern_type=_extract_field("PATTERN_TYPE", text) or "altro",
+                        riferimenti=None,
                     )
-                except Exception as e:
-                    logger.warning("Chunk %d/%d unexpected error (%s) — using default", i + 1, total_chunks, e)
-                    result = Analisi_Paragrafo(
-                        requirement="[Errore analisi comma]",
-                        core_text="", search_text="", pattern_type="altro",
+                except Exception as e2:
+                    logger.warning(
+                        "Chunk %d/%d plain text fallback failed (%s) — using default",
+                        i + 1, total_chunks, e2,
                     )
+
                 elapsed = time.time() - t_call
                 call_times.append(elapsed)
-                logger.debug("Chunk %d/%d completed in %.2fs", i + 1, total_chunks, elapsed)
-                return result
+                return Analisi_Paragrafo(
+                    requirement="[Errore analisi comma]",
+                    core_text="", search_text="", pattern_type="altro",
+                )
 
         logger.info("[TIMING] total_chunks=%d, method=parallel_gather", total_chunks)
         logger.info("[TIMING] Starting parallel LLM analysis: %d chunks, semaphore=10", total_chunks)
         t_gather = time.time()
         raw_results = list(await _asyncio.gather(
-            *[_invoke_single(inp, i, llm, llm_fallback) for i, inp in enumerate(flat_inputs)]
+            *[_invoke_with_fallback(inp, i, llm, llm_fallback) for i, inp in enumerate(flat_inputs)]
         ))
         logger.info(
             "[TIMING] Parallel LLM analysis complete: %d chunks in %.1fs | call: min=%.1fs avg=%.1fs max=%.1fs",
