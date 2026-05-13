@@ -283,13 +283,12 @@ async def analisi_parallel(
         llm          = _get_structured_llm()
         llm_fallback = _get_structured_llm_fallback()
 
-        _semaphore = _asyncio.Semaphore(10)  # max 10 concurrent RunPod calls
-        call_times: list[float] = [0.0] * total_chunks
+        semaphore = _asyncio.Semaphore(10)  # max 10 concurrent RunPod calls
+        call_times: list[float] = []
 
-        async def _call_chunk(i: int, inp) -> Analisi_Paragrafo:
-            words = len(inp[-1].content.split())
-            t_call = time.time()
-            async with _semaphore:
+        async def _invoke_single(inp, i, llm, llm_fallback) -> Analisi_Paragrafo:
+            async with semaphore:
+                t_call = time.time()
                 try:
                     result = await llm.ainvoke(inp)
                 except (RateLimitError, APITimeoutError, InternalServerError) as e:
@@ -314,21 +313,21 @@ async def analisi_parallel(
                         requirement="[Errore analisi comma]",
                         core_text="", search_text="", pattern_type="altro",
                     )
+                elapsed = time.time() - t_call
+                call_times.append(elapsed)
+                logger.debug("Chunk %d/%d completed in %.2fs", i + 1, total_chunks, elapsed)
+                return result
 
-            elapsed_call = time.time() - t_call
-            call_times[i] = elapsed_call
-            logger.info("LLM chunk %d/%d — words: %d, time: %.1fs", i + 1, total_chunks, words, elapsed_call)
-            return result
-
-        batch_start = time.time()
+        logger.info("[TIMING] total_chunks=%d, method=parallel_gather", total_chunks)
+        logger.info("[TIMING] Starting parallel LLM analysis: %d chunks, semaphore=10", total_chunks)
+        t_gather = time.time()
         raw_results = list(await _asyncio.gather(
-            *[_call_chunk(i, inp) for i, inp in enumerate(flat_inputs)]
+            *[_invoke_single(inp, i, llm, llm_fallback) for i, inp in enumerate(flat_inputs)]
         ))
-        total_elapsed = time.time() - batch_start
         logger.info(
-            "LLM batch done — %d chunks in %.1fs (concurrent, semaphore=10) | call: min=%.1fs avg=%.1fs max=%.1fs",
+            "[TIMING] Parallel LLM analysis complete: %d chunks in %.1fs | call: min=%.1fs avg=%.1fs max=%.1fs",
             total_chunks,
-            total_elapsed,
+            time.time() - t_gather,
             min(call_times), sum(call_times) / len(call_times), max(call_times),
         )
 
