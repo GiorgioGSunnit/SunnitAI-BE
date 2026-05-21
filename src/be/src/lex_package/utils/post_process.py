@@ -14,7 +14,8 @@ from __future__ import annotations
 
 import logging
 import os
-import threading
+
+from lex_package.utils.embeddings import embed_texts_batch, embeddings_enabled
 
 logger = logging.getLogger("lex_package.post_process")
 
@@ -256,29 +257,6 @@ def _step2b_fix_section_properties(session, document_hash: str) -> str:
         return f"error: {exc}"
 
 
-# ── Embedding model singleton ──────────────────────────────────────────────────
-
-_embedding_model = None
-_embedding_model_lock = threading.Lock()
-
-
-def _get_embedding_model():
-    """
-    Load the SentenceTransformer model once and cache it for the process lifetime.
-    Thread-safe: double-checked locking prevents concurrent loads when multiple
-    background embedding tasks start simultaneously.
-    """
-    global _embedding_model
-    if _embedding_model is None:
-        with _embedding_model_lock:
-            if _embedding_model is None:
-                from sentence_transformers import SentenceTransformer
-                logger.info("post_process: loading SentenceTransformer model (first use)")
-                _embedding_model = SentenceTransformer("BAAI/bge-large-en-v1.5")
-                logger.info("post_process: SentenceTransformer model loaded and cached")
-    return _embedding_model
-
-
 # ── Step 3 ─────────────────────────────────────────────────────────────────────
 
 def _step3_generate_embeddings(session, document_hash: str) -> str:
@@ -305,26 +283,22 @@ def _step3_generate_embeddings(session, document_hash: str) -> str:
             logger.info("post_process step3: no Section nodes need embeddings")
             return "0 embeddings generated"
 
-        model = _get_embedding_model()
-        batch_size = 100
+        if not embeddings_enabled():
+            return "0 embeddings generated (disabled)"
+
+        texts = [n["text"] for n in nodes]
+        embeddings = embed_texts_batch(texts)
         total = 0
 
-        for i in range(0, len(nodes), batch_size):
-            batch = nodes[i : i + batch_size]
-            texts = [n["text"] for n in batch]
-            embeddings = model.encode(texts, normalize_embeddings=True)
-
-            for node, embedding in zip(batch, embeddings):
-                session.run(
-                    "MATCH (s) WHERE elementId(s) = $eid SET s.embedding = $emb",
-                    eid=node["element_id"],
-                    emb=embedding.tolist(),
-                )
-            total += len(batch)
-            logger.debug(
-                "post_process step3: embedded %d/%d nodes",
-                min(i + batch_size, len(nodes)), len(nodes),
+        for node, embedding in zip(nodes, embeddings):
+            if not embedding:
+                continue
+            session.run(
+                "MATCH (s) WHERE elementId(s) = $eid SET s.embedding = $emb",
+                eid=node["element_id"],
+                emb=embedding,
             )
+            total += 1
 
         logger.info("post_process step3: generated %d embeddings", total)
         return f"{total} embeddings generated"

@@ -59,6 +59,21 @@ def embed_text(text: str) -> list[float]:
         return []
 
 
+def embed_texts_batch(texts: list[str]) -> list[list[float]]:
+    """Batch-embed a list of texts via the configured OpenAI-compatible endpoint.
+
+    Returns a parallel list of embedding vectors. Returns all-empty on failure.
+    """
+    if not embeddings_enabled():
+        return [[] for _ in texts]
+    cleaned = [(t or "").strip() for t in texts]
+    try:
+        vecs = _get_embedder().embed_documents(cleaned)
+        return [[float(x) for x in vec] for vec in vecs]
+    except Exception:
+        return [[] for _ in texts]
+
+
 def cosine_similarity(a: Iterable[float], b: Iterable[float]) -> float:
     a_list = list(a)
     b_list = list(b)

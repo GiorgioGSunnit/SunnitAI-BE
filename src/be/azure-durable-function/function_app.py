@@ -758,17 +758,17 @@ def upload_client(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps({"error": str(e)}), status_code=500, mimetype="application/json"
         )
 
-# Ingest endpoint — drops a PDF into the watcher inbox to trigger the full
-# parse → LLM → Neo4J pipeline.
+# Ingest endpoint — runs the full pipeline directly (parse → LLM → flatten → Neo4J → embeddings).
 @app.route(route="ingest", methods=["POST"])
 def ingest(req: func.HttpRequest) -> func.HttpResponse:
     """
     POST /api/ingest  (multipart/form-data)
         file  — PDF binary (required)
 
-    Saves the PDF to WATCH_DIR so the watcher picks it up and runs the full
-    ingestion pipeline (parse → LLM analysis → Neo4J write).
-    Returns 202 immediately; processing happens asynchronously.
+    Submits the PDF to the full ingestion pipeline:
+        parse → LLM analysis → flatten → Neo4J write → post-process → embeddings (qwen3)
+
+    Returns 202 immediately with a job ID. Poll GET /api/job/<id> for progress.
     """
     try:
         file = req.files.get("file")
@@ -786,19 +786,32 @@ def ingest(req: func.HttpRequest) -> func.HttpResponse:
                 mimetype="application/json",
             )
 
-        watch_dir = Path(os.environ.get("WATCH_DIR", "/opt/sunnitai-be/inbox"))
-        watch_dir.mkdir(parents=True, exist_ok=True)
+        input_data = {
+            "filename": file.filename,
+            "file_content": base64.b64encode(file.stream.read()).decode("utf-8"),
+            "template": None,
+        }
 
-        dest = watch_dir / file.filename
-        dest.write_bytes(file.stream.read())
+        queue_position = increment_active("pipeline")
+        try:
+            job_id = create_job("pipeline", "Pending", queue_position=queue_position)
+            _job_executor.submit(_run_full_pipeline_job, job_id, input_data)
+        except Exception:
+            decrement_active("pipeline")
+            raise
 
-        logger.info("ingest: dropped '%s' into %s", file.filename, watch_dir)
+        logger.info(
+            "ingest: queued job %s for '%s' (queue_position=%d)",
+            job_id, file.filename, queue_position,
+        )
 
         return func.HttpResponse(
-            json.dumps({
-                "status": "accepted",
+            body=json.dumps({
+                "id": job_id,
+                "statusQueryGetUri": f"/api/job/{job_id}",
+                "status": "Pending",
                 "filename": file.filename,
-                "message": "File queued for ingestion. Check watcher logs for progress.",
+                "queue_position": queue_position,
             }),
             status_code=202,
             mimetype="application/json",

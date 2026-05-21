@@ -373,11 +373,8 @@ def build_neo4j_graph_payload(
                 "abstract": abstract,
                 "plain_text": plain_text,
                 "references": references,
-                # Allineato al flatten JSON: stesso vettore di "Vettore" / "Embedding Raw"
                 "vettore": vec,
                 "embedding_dim": embedding_dim,
-                # Compatibilità: stesso contenuto di ``vettore`` (nome storico per Neo4j)
-                "embedding": vec,
             },
         )
         relationships.append({"type": "CONTAINS", "source": doc_node_id, "target": section_id})
