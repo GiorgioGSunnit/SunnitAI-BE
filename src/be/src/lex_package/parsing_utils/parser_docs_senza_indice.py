@@ -2,6 +2,7 @@ import re
 import fitz  # PyMuPDF
 import os
 from .parser_indice import identify_repeated_headers_footers, normalize_line
+from lex_package.utils.pdf_extract import extract_page_blocks
 
 
 # from pathlib import Path
@@ -47,15 +48,15 @@ def parser_contenuto(pdf_path: str) -> list[dict]:
 
     for page_num, page in enumerate(doc):
         blocks = [
-            b for b in page.get_text("blocks") if b[1] > 50
+            b for b in extract_page_blocks(page) if b["bbox"][1] > 50
         ]  # Ignora intestazioni
         blocks = sorted(
-            blocks, key=lambda b: (b[1], b[0])
+            blocks, key=lambda b: (b["bbox"][1], b["bbox"][0])
         )  # Ordinamento top-down, poi sinistra-destra
 
         i = 0
         while i < len(blocks):
-            x, y, _, _, text, *_ = blocks[i]
+            x, y, text = blocks[i]["bbox"][0], blocks[i]["bbox"][1], blocks[i]["text"]
             text = text.strip()
             debug_log.append(f"[Page {page_num + 1}] Block {i}: '{text}'")
 
@@ -96,7 +97,7 @@ def parser_contenuto(pdf_path: str) -> list[dict]:
                 chapter_detected = False
 
                 while i < len(blocks):
-                    _, _, _, _, next_text, *_ = blocks[i]
+                    next_text = blocks[i]["text"]
                     next_text = next_text.strip()
                     if (
                         chapter_pattern.match(next_text)

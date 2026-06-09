@@ -8,6 +8,7 @@ import json
 import os
 from collections import Counter
 from pathlib import Path
+from lex_package.utils.pdf_extract import extract_page_text
 
 
 _SRCDIR = Path(__file__).resolve().parents[2]
@@ -113,7 +114,7 @@ def parser_gazzetta_ue(pdf_path):
     all_lines = []
     for page_num in range(len(doc)):
         page = doc[page_num]
-        text = page.get_text()
+        text = extract_page_text(page)
         for line in text.split("\n"):
             stripped = line.strip()
             if _is_header_footer(stripped, repeated_lines):

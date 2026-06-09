@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 import os
 
-from lex_package.utils.embeddings import embed_texts_batch, embeddings_enabled
+from lex_package.utils.embeddings import embed_texts_batch_unconditional
 
 logger = logging.getLogger("lex_package.post_process")
 
@@ -150,21 +150,26 @@ def _clean_plain_text(text: str) -> str:
 
     lines = text.split("\n")
 
-    # Find first "substantial" line — longer than 100 chars or
-    # starts a numbered list (1. 2. etc) or contains legal keywords
-    legal_keywords = [
-        "articolo", "comma", "legge", "decreto", "requisiti",
-        "regime", "soggetti", "contratto", "diritto", "obbligo",
-    ]
-
+    # Strip only very short header/navigation lines at the top (page numbers,
+    # section labels under 30 chars with no legal content).
+    # Never strip lines that end with ":" — they introduce content that follows.
+    skip_until = 0
     for i, line in enumerate(lines):
         stripped = line.strip()
-        if len(stripped) > 100:
-            return "\n".join(lines[i:]).strip()
-        if any(kw in stripped.lower() for kw in legal_keywords) and len(stripped) > 30:
-            return "\n".join(lines[i:]).strip()
+        # Stop skipping as soon as we hit a substantive line
+        if len(stripped) > 30:
+            skip_until = i
+            break
+        # Skip truly empty or very short non-content lines (page numbers etc)
+        if len(stripped) == 0 or (len(stripped) < 10 and stripped.isdigit()):
+            skip_until = i + 1
+            continue
+        # Stop skipping if line ends with colon — it introduces content
+        if stripped.endswith(":"):
+            skip_until = i
+            break
 
-    return text
+    return "\n".join(lines[skip_until:]).strip()
 
 
 # ── Step 2b ────────────────────────────────────────────────────────────────────
@@ -177,11 +182,12 @@ def _step2b_fix_section_properties(session, document_hash: str) -> str:
     - clear embeddings so Step 3 re-generates them with clean text
     """
     try:
-        # Fix name — sequential numbering ordered by elementId
+        # Fix name — assign sequential index only to sections with invalid names
         session.run(
             """
             MATCH (d:Document)-[:CONTAINS]->(s:Section)
             WHERE d.hash = $document_hash
+              AND (s.name IS NULL OR s.name = "" OR s.name = "0")
             WITH s ORDER BY elementId(s)
             WITH collect(s) AS sections
             UNWIND range(0, size(sections)-1) AS i
@@ -283,11 +289,8 @@ def _step3_generate_embeddings(session, document_hash: str) -> str:
             logger.info("post_process step3: no Section nodes need embeddings")
             return "0 embeddings generated"
 
-        if not embeddings_enabled():
-            return "0 embeddings generated (disabled)"
-
         texts = [n["text"] for n in nodes]
-        embeddings = embed_texts_batch(texts)
+        embeddings = embed_texts_batch_unconditional(texts)
         total = 0
 
         for node, embedding in zip(nodes, embeddings):

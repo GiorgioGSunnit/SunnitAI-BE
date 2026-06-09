@@ -2,6 +2,7 @@ import re
 import fitz  # PyMuPDF
 from collections import Counter
 import json
+from lex_package.utils.pdf_extract import extract_page_text
 
 
 def identify_repeated_headers_footers(doc, min_repeats=3):
@@ -115,7 +116,7 @@ def parser_indice(pdf_path="../data/documento.pdf") -> list[dict]:
     for page_num, page in enumerate(doc, start=1):
         if page_num > max_pages:
             break
-        text = page.get_text()
+        text = extract_page_text(page)
         cleaned_text = clean_text(text, repeated_lines)
 
         for line in merge_broken_lines(cleaned_text):

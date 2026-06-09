@@ -8,6 +8,16 @@ import json
 import os
 from collections import Counter
 from pathlib import Path
+from lex_package.utils.pdf_extract import extract_page_blocks
+
+
+def _flatten_table(table_data: list) -> str:
+    rows = []
+    for row in table_data:
+        cells = [str(c).strip() for c in row if c is not None and str(c).strip()]
+        if cells:
+            rows.append("  ".join(cells))
+    return "\n".join(rows)
 
 
 _SRCDIR = Path(__file__).resolve().parents[2]
@@ -123,43 +133,15 @@ def parser_boe(pdf_path):
     for page_num in range(len(doc)):
         page = doc[page_num]
         height = page.rect.height
-        blocks = page.get_text("blocks")
-        blocks = sorted(blocks, key=lambda b: (b[1], b[0]))
-        page_dict = page.get_text("dict")
-        span_map = {}
-        for blk in page_dict.get("blocks", []):
-            if blk.get("type") == 0:
-                all_spans = []
-                block_text_parts = []
-                for line in blk.get("lines", []):
-                    for span in line.get("spans", []):
-                        all_spans.append(span)
-                        block_text_parts.append(span.get("text", ""))
-                block_text = " ".join(block_text_parts).strip()
-                if block_text:
-                    span_map[block_text[:100]] = all_spans
-
-        tabs = page.find_tables()
-        table_bboxes = [table.bbox for table in tabs.tables] if tabs.tables else []
+        blocks = extract_page_blocks(page)
 
         for block in blocks:
-            x0, y0, x1, y1 = block[0], block[1], block[2], block[3]
-            text = block[4].strip() if len(block) > 4 else ""
-            block_type = block[6] if len(block) > 6 else 0
-            if block_type == 1:
-                continue
+            x0, y0 = block["bbox"][0], block["bbox"][1]
+            text = block["text"]
             if _is_skip_block(text, repeated_lines, y0, height):
                 continue
 
-            in_table = False
-            for tbbox in table_bboxes:
-                tx0, ty0, tx1, ty1 = tbbox
-                if x0 >= tx0 - 2 and y0 >= ty0 - 2 and x1 <= tx1 + 2 and y1 <= ty1 + 2:
-                    in_table = True
-                    break
-
-            spans_for_block = span_map.get(text.strip()[:100], None)
-            if _is_ministry_header(text, spans_for_block):
+            if _is_ministry_header(text):
                 current_ministerio = text.strip()
                 continue
 
@@ -182,17 +164,7 @@ def parser_boe(pdf_path):
                 continue
 
             if current_disposicion:
-                if in_table:
-                    for table in tabs.tables:
-                        tbbox = table.bbox
-                        tx0, ty0, tx1, ty1 = tbbox
-                        if x0 >= tx0 - 2 and y0 >= ty0 - 2 and x1 <= tx1 + 2 and y1 <= ty1 + 2:
-                            table_data = table.extract()
-                            if table_data not in current_disposicion["tables"]:
-                                current_disposicion["tables"].append(table_data)
-                            break
-                else:
-                    current_disposicion["text_parts"].append(text)
+                current_disposicion["text_parts"].append(text)
 
     if current_disposicion:
         _finalize_disposicion(current_disposicion, disposiciones, debug_log)
@@ -212,7 +184,7 @@ def parser_boe(pdf_path):
                 "tipo": "tabella",
                 "identificativo": f"{disp['numero']}_tab{i+1}",
                 "titolo_articolo": "",
-                "contenuto": str(table_data),
+                "contenuto": _flatten_table(table_data),
             })
         result.append({
             "codicedocumento": "BOE",

@@ -75,6 +75,17 @@ def stable_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def _clean_id(raw: str) -> str:
+    """Extract only the leading numeric identifier, stripping any appended title text.
+    '1.Definizioni' → '1', '1.1' → '1.1', 'Art' → '', 'Art.5' → '', '2b' → '2b'"""
+    s = raw.strip()
+    # Reject pure-word junk (Art, Art_2, sce, etc.)
+    if re.match(r'^[A-Za-z_]+\d*$', s):
+        return ""
+    m = re.match(r'^(\d[\d\.\-]*[a-z]?)', s, re.IGNORECASE)
+    return m.group(1).rstrip('.') if m else ""
+
+
 def _coefficiente_sort_key(v: Any) -> float:
     try:
         if v is None or v == "":
@@ -314,26 +325,83 @@ def build_neo4j_graph_payload(
     )
     relationships.append({"type": "PUBLISHED", "source": doc_node_id, "target": source_id})
 
+    seen_section_names: dict[str, int] = {}
+
     for r in records:
         tipo = (r.get("Tipo") or "").strip()
         if tipo not in ("Articolo", "Comma", "Sottocomma"):
             continue
 
         art = str(r.get("Articolo", "")).strip()
+        _art_match = re.search(
+            r'(\d+(?:[-\s]*(?:bis|ter|quater|quinquies|sexies|septies|octies|novies|decies))?)',
+            art, re.IGNORECASE,
+        )
+        art = _art_match.group(1).strip().rstrip('.') if _art_match else art
+        if not art:
+            titolo = str(r.get("Titolo Articolo", "")).strip()
+            _titolo_num = re.match(r'^(\d+)[\.\s]', titolo)
+            if _titolo_num:
+                art = _titolo_num.group(1)
+        # For documents with multi-level hierarchy (banking circulars etc),
+        # build a unique section name from available hierarchy fields.
+        # Priority: use Parte+Titolo+Capitolo if available, else fall back to Titolo Articolo.
+        _parte = str(r.get("Parte") or r.get("titoloParte_articolo", "")).strip()
+        _titolo = str(r.get("Titolo") or r.get("titoloTitolo_articolo", "")).strip()
+        _capitolo = str(r.get("Capitolo") or r.get("titoloCapitolo_articolo", "")).strip()
+        titolo_articolo = str(r.get("Titolo Articolo", "")).strip()
+
+        def _slug(text: str, max_words: int = 2) -> str:
+            words = re.sub(r'[^\w\s]', '', text).split()
+            return "_".join(w.lower() for w in words[:max_words] if len(w) > 2 or w.isdigit())
+
+        if art and art.isdigit() and int(art) <= 20:
+            # Build prefix from most specific available hierarchy level
+            prefix = ""
+            if _capitolo and not re.match(r'^\d+$', _capitolo):
+                prefix = _slug(_capitolo, 3)
+            elif _titolo and not re.match(r'^\d+$', _titolo):
+                prefix = _slug(_titolo, 3)
+            elif _parte and not re.match(r'^\d+$', _parte):
+                prefix = _slug(_parte, 3)
+            elif titolo_articolo and not re.match(r'^\d+', titolo_articolo) and len(titolo_articolo) > 10:
+                prefix = _slug(titolo_articolo, 3)
+            if prefix:
+                art = f"{prefix}.{art}"
         comma = str(r.get("Identificativo Comma", "")).strip()
         sottocomma = str(r.get("Identificativo Sottocomma", "")).strip()
+        # Strip non-numeric/non-letter artifacts from identifiers (e.g. "Art", "Art.0")
+        # Keep only identifiers that are numeric, single letters, or numeric-letter combos
+        _id_clean = re.compile(r'^[\w\-]+$')
+        _id_junk = re.compile(r'^Art\.?\d*$', re.IGNORECASE)
+        if _id_junk.match(comma):
+            comma = ""
+        if _id_junk.match(sottocomma):
+            sottocomma = ""
 
         if tipo == "Articolo":
-            section_name = str(r.get("Titolo Articolo", "")).strip() or art
-            plain_text = str(
-                r.get("Contenuto Articolo") or r.get("Contenuto", "")
-            ).strip()
+            section_name = art
+            plain_text = str(r.get("Contenuto Articolo") or r.get("Contenuto", "")).strip()
         elif tipo == "Comma":
-            section_name = comma or "0"
+            comma_id = _clean_id(str(r.get("Identificativo Comma", "")).strip())
+            section_name = f"{art}.{comma_id}" if comma_id else art
             plain_text = str(r.get("Contenuto Comma", "")).strip()
         else:
-            section_name = sottocomma or "0"
+            comma_id = _clean_id(str(r.get("Identificativo Comma", "")).strip())
+            sottocomma_id = _clean_id(str(r.get("Identificativo Sottocomma", "")).strip())
+            if comma_id and sottocomma_id:
+                section_name = f"{art}.{comma_id}.{sottocomma_id}"
+            elif comma_id:
+                section_name = f"{art}.{comma_id}"
+            else:
+                section_name = art
             plain_text = str(r.get("Contenuto Sottocomma", "")).strip()
+
+        if section_name in seen_section_names:
+            seen_section_names[section_name] += 1
+            section_name = f"{section_name}_{seen_section_names[section_name]}"
+        else:
+            seen_section_names[section_name] = 1
 
         vec = _vector_from_flat_record(r)
         if not vec:
@@ -650,6 +718,9 @@ def flatten_analisi_invertito(out_analisi):
                             "Codice Documento": x.get("codicedocumento", ""),
                             "Codice Articolo": x.get("codicearticolo", ""),
                             "Titolo Articolo": x.get("titolo", ""),
+                            "Parte": c.get("titoloParte_articolo", ""),
+                            "Titolo": c.get("titoloTitolo_articolo", ""),
+                            "Capitolo": c.get("titoloCapitolo_articolo", ""),
                             "Articolo": IdentificativoArticolo,
                             "Identificativo Comma": c.get("identificativo", ""),
                             "Identificativo Sottocomma": sc.get(
@@ -785,6 +856,7 @@ def flatten_analisi_invertito(out_analisi):
             #                print("################################### HASH (Comma) CALCOLATO ", str(len(testo_pulito)), "---> ", str(x_hash), " Pagina ", x.get("page", ""), " Articolo ", x.get("titolo", ""), " ########################################à")
             ##                x_hash = hash(nojunkchars(concat_nested(ContenutoArticolo)))
 
+            _hier_c = x["contenuto_parsato"][0] if x.get("contenuto_parsato") else {}
             res.append(
                 {
                     "Tipo": "Articolo",
@@ -792,6 +864,9 @@ def flatten_analisi_invertito(out_analisi):
                     "Codice Documento": x.get("codicedocumento", ""),
                     "Codice Articolo": x.get("codicearticolo", ""),
                     "Titolo Articolo": x.get("titolo", ""),
+                    "Parte": _hier_c.get("titoloParte_articolo", ""),
+                    "Titolo": _hier_c.get("titoloTitolo_articolo", ""),
+                    "Capitolo": _hier_c.get("titoloCapitolo_articolo", ""),
                     "Articolo": IdentificativoArticolo,
                     "Contenuto Articolo": ContenutoArticolo,
                     "Contenuto": ContenutoArticolo,

@@ -4,6 +4,7 @@ from collections import Counter
 # from .parser_regolamento import identify_repeated_headers_footers
 import json
 from pprint import pprint
+from lex_package.utils.pdf_extract import extract_page_text
 
 def identify_repeated_headers_footers_OLD(doc, min_repeats=3):
     lines = []
@@ -121,7 +122,7 @@ def parser_indice(pdf_path="../data/documento.pdf") -> list[dict]:
     for page_num, page in enumerate(doc, start=1):
         if page_num > 2:
             break
-        text = page.get_text()
+        text = extract_page_text(page)
         cleaned_text = clean_text(text, repeated_lines)
 
         for line in merge_broken_lines(cleaned_text):  # ② linee già ricomposte

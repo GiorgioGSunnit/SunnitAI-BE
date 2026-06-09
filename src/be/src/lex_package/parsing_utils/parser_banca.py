@@ -173,17 +173,27 @@ def detect_start_page(pdf_path):
 
 def is_sezione(line):
     stripped = line.strip()
-    if re.match(r"^SEZIONE\s+[IVXLC]+", stripped, re.IGNORECASE):
-        result = re.match(r"^SEZIONE\s+[IVXLC]+", stripped, re.IGNORECASE)
-    elif re.match(r"^ALLEGATO\s+[A-Z0-9]{1}", stripped, re.IGNORECASE):
-        result = re.match(r"^ALLEGATO\s+[A-Z0-9]{1}", stripped, re.IGNORECASE)
-    elif re.match(r"^PARTE\s+(?:PRIMA|SECONDA|TERZA|QUARTA|QUINTA|SESTA|SETTIMA|OTTAVA|NONA|DECIMA|[IVXLC]+)\s*$", stripped):
-        result = re.match(r"^PARTE\s+(?:PRIMA|SECONDA|TERZA|QUARTA|QUINTA|SESTA|SETTIMA|OTTAVA|NONA|DECIMA|[IVXLC]+)\s*$", stripped)
-    elif re.match(r"^DISPOSIZIONI\s+PRELIMINARI", stripped, re.IGNORECASE):
-        result = re.match(r"^DISPOSIZIONI\s+PRELIMINARI", stripped, re.IGNORECASE)
-    else:
-        result = None
-    return result
+    patterns = [
+        r"^SEZIONE\s+[IVXLC]+",
+        r"^(?:PRIMA|SECONDA|TERZA|QUARTA|QUINTA|SESTA|SETTIMA|OTTAVA|NONA|DECIMA)\s+SEZIONE",
+        r"^ALLEGATO\s+[A-Z0-9]{1}",
+        r"^PARTE\s+(?:PRIMA|SECONDA|TERZA|QUARTA|QUINTA|SESTA|SETTIMA|OTTAVA|NONA|DECIMA|[IVXLC]+)(?:\s*[-–].*)?$",
+        r"^TITOLO\s+[IVXLC]+",
+        r"^CAPO\s+[IVXLC]+",
+        r"^CAPITOLO\s+(?:[IVXLC]+|\d+)",
+        r"^LIBRO\s+(?:PRIMO|SECONDO|TERZO|QUARTO|QUINTO|SESTO|SETTIMO|OTTAVO|NONO|DECIMO|[IVXLC]+)",
+        r"^DISPOSIZIONI\s+PRELIMINARI",
+    ]
+    for pat in patterns:
+        result = re.match(pat, stripped, re.IGNORECASE)
+        if result:
+            return result
+    return None
+
+def _is_toc_page(text: str) -> bool:
+    """Detect chapter-index pages by consecutive numbered items with no prose between.
+    Real content never has '1. 2.' or '3. 4.' — TOC pages always do."""
+    return len(re.findall(r'\d+\.\s+\d+\.', text)) >= 2
 
 def is_paragrafo(line):
     return re.match(r"^\d+(\.\d+)*\.?\s+[^\n]{1,100}", line.strip()) is not None
@@ -196,10 +206,18 @@ def aggiungi_sezione_se_nuova(sezioni, current_sezione):
     return sezioni
 
 def aggiungi_paragrafo_se_nuovo(current_sezione, current_paragrafo):
-    identificativi_esistenti = {p["identificativo"] for p in current_sezione.get("contenuto_parsato", [])}
-    
-    if current_paragrafo["identificativo"] not in identificativi_esistenti:
-        #current_sezione.setdefault("contenuto_parsato", []).append(current_paragrafo)
+    # Deduplicate by full hierarchy key, not just identificativo.
+    # This allows the same paragraph number to appear in different chapters.
+    def _para_key(p: dict) -> tuple:
+        return (
+            p.get("identificativo", ""),
+            p.get("titoloParte_articolo", ""),
+            p.get("titoloTitolo_articolo", ""),
+            p.get("titoloCapitolo_articolo", ""),
+        )
+
+    chiavi_esistenti = {_para_key(p) for p in current_sezione.get("contenuto_parsato", [])}
+    if _para_key(current_paragrafo) not in chiavi_esistenti:
         current_sezione["contenuto_parsato"].append(current_paragrafo)
     return current_sezione
 
@@ -274,6 +292,7 @@ def parser_pdf(pdf_path, start_page):
             TitoloAllegato = Trovato.group("Allegato")
             TitoloSezione = Trovato.group("Sezione")
             debug_log.append("   ###### " + str(TitoloCompleto))
+        _skip_paragraphs = _is_toc_page(page_text)
 
 #        for b in blocks:
 #            if b["type"] == 0:  # Se il blocco è di testo
@@ -336,6 +355,9 @@ def parser_pdf(pdf_path, start_page):
                 current_paragrafo = None
                 continue
 
+            if _skip_paragraphs:
+                continue
+
             # 1️⃣  PARAGRAFO ---------------------------------------------------
             if is_paragrafo(line):
                 # Identifica PARAGRAFI con il titolo su un'unica riga
@@ -343,7 +365,7 @@ def parser_pdf(pdf_path, start_page):
                 #                print("##### E' un paragrafo (pagina ", numero_pagina,") ==>", line.strip())
                 if m:
                     current_paragrafo = {
-                        "identificativo": str(m.group("id").strip()) + str(m.group("title").strip()),
+                        "identificativo": str(m.group("id").strip()).rstrip("."),
                         "titolo_articolo": titolo_sezione,
                         "titoloParte_articolo":    TitoloParte,
                         "titoloTitolo_articolo":   TitoloTitolo,
@@ -374,9 +396,10 @@ def parser_pdf(pdf_path, start_page):
                 else:
                     if (TitoloDueRighe_numeroriga + 1 == line_idx):
                         TitoloDueRighe = False
+                        numero_paragrafo = Titolo_Paragrafo.rstrip(".")
                         Titolo_Paragrafo = Titolo_Paragrafo + str(line)
                         current_paragrafo = {
-                            "identificativo": str(Titolo_Paragrafo),
+                            "identificativo": numero_paragrafo,
                             "titolo_articolo": titolo_sezione,
                             "titoloParte_articolo": TitoloParte,
                             "titoloTitolo_articolo": TitoloTitolo,

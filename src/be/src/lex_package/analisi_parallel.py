@@ -99,6 +99,8 @@ def _merge_chunk_results(chunks: list[Analisi_Paragrafo]) -> Analisi_Paragrafo:
     - search_text  : non-empty values joined with " "
     - riferimenti  : union, deduplicated by (n_articolo, nome_documento)
     """
+    if not chunks:
+        return Analisi_Paragrafo()
     if len(chunks) == 1:
         return chunks[0]
 
@@ -164,6 +166,7 @@ async def analisi_parallel(
     #                merged_results, so chunks can be merged after LLM calls
     flat_inputs:   list = []
     comma_indices: list[int] = []
+    flat_chunk_contents: list[str] = []
     debug_log = []
     article_lengths = []
     comma_idx = 0  # increments once per comma, regardless of chunks
@@ -214,6 +217,7 @@ async def analisi_parallel(
                             ]
                         )
                         comma_indices.append(comma_idx)
+                        flat_chunk_contents.append(chunk)
                     comma_idx += 1
             else:
                 content = comma.get("contenuto", "").strip()
@@ -250,6 +254,7 @@ async def analisi_parallel(
                         ]
                     )
                     comma_indices.append(comma_idx)
+                    flat_chunk_contents.append(chunk)
                 comma_idx += 1
 
     total_chunks = len(flat_inputs)
@@ -268,6 +273,18 @@ async def analisi_parallel(
 
     print("     - Analisi_parallel 🥔🥔🥔", total_commas, f"({total_chunks} chunks)")
 
+    _pre_filter = len(flat_inputs)
+    _keep = [i for i, c in enumerate(flat_chunk_contents) if len(c.strip()) >= 30]
+    _skipped = _pre_filter - len(_keep)
+    if _skipped:
+        logger.info(
+            "Skipping %d/%d trivial chunks (< 30 chars) before LLM; sending %d",
+            _skipped, _pre_filter, len(_keep),
+        )
+    flat_inputs   = [flat_inputs[i]   for i in _keep]
+    comma_indices = [comma_indices[i] for i in _keep]
+    total_chunks  = len(flat_inputs)
+
     # 2️⃣  LLM calls — concurrent with semaphore --------------------------
     if total_chunks == 0:
         raw_results = []
@@ -277,7 +294,7 @@ async def analisi_parallel(
         llm          = _get_structured_llm()
         llm_fallback = _get_structured_llm_fallback()
 
-        semaphore = _asyncio.Semaphore(10)  # max 10 concurrent RunPod calls
+        semaphore = _asyncio.Semaphore(25)  # max 25 concurrent RunPod calls
         call_times: list[float] = []
 
         async def _invoke_with_fallback(inp, i, llm, llm_fallback) -> Analisi_Paragrafo:
@@ -285,12 +302,14 @@ async def analisi_parallel(
                 t_call = time.time()
 
                 # Attempt 1: structured output with exponential backoff (15s, then 25s)
-                for attempt, timeout_secs in enumerate([15, 25]):
+                for attempt, timeout_secs in enumerate([15, 60]):
                     try:
                         result = await _asyncio.wait_for(llm.ainvoke(inp), timeout=timeout_secs)
                         elapsed = time.time() - t_call
                         call_times.append(elapsed)
                         logger.debug("Chunk %d/%d completed in %.2fs", i + 1, total_chunks, elapsed)
+                        if (i + 1) % 25 == 0 or (i + 1) == total_chunks:
+                            logger.info("Progress: chunk %d/%d complete", i + 1, total_chunks)
                         return result
                     except _asyncio.TimeoutError:
                         logger.warning(
@@ -360,17 +379,20 @@ async def analisi_parallel(
                 )
 
         logger.info("[TIMING] total_chunks=%d, method=parallel_gather", total_chunks)
-        logger.info("[TIMING] Starting parallel LLM analysis: %d chunks, semaphore=10", total_chunks)
+        logger.info("[TIMING] Starting parallel LLM analysis: %d chunks, semaphore=25", total_chunks)
         t_gather = time.time()
         raw_results = list(await _asyncio.gather(
             *[_invoke_with_fallback(inp, i, llm, llm_fallback) for i, inp in enumerate(flat_inputs)]
         ))
-        logger.info(
-            "[TIMING] Parallel LLM analysis complete: %d chunks in %.1fs | call: min=%.1fs avg=%.1fs max=%.1fs",
-            total_chunks,
-            time.time() - t_gather,
-            min(call_times), sum(call_times) / len(call_times), max(call_times),
-        )
+        if call_times:
+            logger.info(
+                "[TIMING] Parallel LLM analysis complete: %d chunks in %.1fs | call: min=%.1fs avg=%.1fs max=%.1fs",
+                total_chunks,
+                time.time() - t_gather,
+                min(call_times), sum(call_times) / len(call_times), max(call_times),
+            )
+        else:
+            logger.info("[TIMING] Parallel LLM analysis complete: no LLM calls made (all filtered)")
 
     # 3️⃣  Merge chunks → one result per comma ---------------------------
     chunks_by_comma: dict[int, list[Analisi_Paragrafo]] = defaultdict(list)

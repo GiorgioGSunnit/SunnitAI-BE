@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 from functools import lru_cache
 from pathlib import Path
 from typing import Iterable, List, Optional
+
+logger = logging.getLogger(__name__)
 
 
 @lru_cache(maxsize=1)
@@ -30,6 +33,18 @@ def _get_embedder():
         raise RuntimeError("Embeddings are disabled by configuration.")
     # Uses the OpenAI-compatible embeddings endpoint configured via
     # LLM_EMBEDDING_BASE_URL / LLM_EMBEDDING_API_KEY / LLM_EMBEDDING_MODEL.
+    try:
+        from lex_package.llm.factory import build_embedding_model
+    except ModuleNotFoundError as e:
+        raise ModuleNotFoundError(
+            "Embeddings dependencies are missing. Ensure 'langchain-openai' is installed "
+            "and LLM_EMBEDDING_MODEL is set in your .env."
+        ) from e
+    return build_embedding_model(target="primary")
+
+
+@lru_cache(maxsize=1)
+def _get_embedder_unconditional():
     try:
         from lex_package.llm.factory import build_embedding_model
     except ModuleNotFoundError as e:
@@ -71,6 +86,17 @@ def embed_texts_batch(texts: list[str]) -> list[list[float]]:
         vecs = _get_embedder().embed_documents(cleaned)
         return [[float(x) for x in vec] for vec in vecs]
     except Exception:
+        return [[] for _ in texts]
+
+
+def embed_texts_batch_unconditional(texts: list[str]) -> list[list[float]]:
+    """Like embed_texts_batch but always runs regardless of embeddings_enabled() flag."""
+    cleaned = [(t or "").strip() for t in texts]
+    try:
+        vecs = _get_embedder_unconditional().embed_documents(cleaned)
+        return [[float(x) for x in vec] for vec in vecs]
+    except Exception as e:
+        logger.error("embed_texts_batch_unconditional failed: %s", e)
         return [[] for _ in texts]
 
 

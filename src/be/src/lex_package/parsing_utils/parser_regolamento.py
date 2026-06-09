@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     import fitz  # pragma: no cover
 
 logger = logging.getLogger(__name__)
+from lex_package.utils.pdf_extract import extract_page_text
 
 # Ho riscritto il parser incapsulando gli stati in oggetti dedicati per eliminare
 # i side effect sparsi e rendere più prevedibile l'aggiunta dei placeholder.
@@ -22,11 +23,12 @@ logger = logging.getLogger(__name__)
 ARTICLE_PATTERN = re.compile(
     r"^(?P<denominazione>ART\.|Articolo)\s+"
     r"(?P<identificativo>\d+)"
-    r"(?:\s*(?P<estensione>bis|ter|quater|quinquies|sexies|septies|octies|"
+    r"(?:[-\s]*(?P<estensione>bis|ter|quater|quinquies|sexies|septies|octies|"
     r"novies|decies|undecies|duodecies|terdecies|quattuordecies|quindecies|"
     r"sexdecies|septendecies|octodecies|novendecies|vicies|unvicies|"
     r"duovicies|tervicies|quattuorvicies|quinvicies|sexvicies|septenvicies|"
-    r"octovicies|novenvicies|tricies))?\s*$"
+    r"octovicies|novenvicies|tricies))?\.?(?:\s+.+)?\s*$",
+    re.IGNORECASE,
 )
 ARTICLE_CODE_PATTERN = re.compile(
     r"\b(?:n\.\s*)?(?P<codice>\d{3,4}/\d{4})\b", flags=re.IGNORECASE
@@ -113,23 +115,19 @@ def validate_article_sequence(
     current_cardinality = _extension_cardinality(estensione)
     is_valid = False
 
-    if previous_number + 1 == numero:
-        is_valid = current_cardinality == 1
-    else:
-        if (
-            previous_number == numero
-            and previous_extension + 1 == current_cardinality
-        ):
-            is_valid = True
-        elif (
-            previous_number == numero
-            and previous_extension + 2 == current_cardinality
-        ):
-            is_valid = True
-        elif previous_number + 2 == numero:
-            is_valid = True
-
     if previous_number == 0:
+        is_valid = True
+    elif numero > previous_number:
+        is_valid = True  # any forward progression is valid
+    elif (
+        previous_number == numero
+        and previous_extension + 1 == current_cardinality
+    ):
+        is_valid = True
+    elif (
+        previous_number == numero
+        and previous_extension + 2 == current_cardinality
+    ):
         is_valid = True
 
     return SequenceCheck(is_valid, numero, current_cardinality)
@@ -277,7 +275,7 @@ class RegulationParser:
             document_stem = Path(pdf_path).stem
             document_code = self._extract_document_code(doc, document_stem=document_stem)
             pages = [
-                doc[page_index].get_text().split("\n")
+                extract_page_text(doc[page_index]).split("\n")
                 for page_index in range(doc.page_count)
             ]
         finally:
@@ -329,9 +327,6 @@ class RegulationParser:
                 else:
                     collector.add_content(line)
 
-            if len(line) > self.max_heading_length:
-                continue
-
             if match:
                 sequence = validate_article_sequence(
                     collector.previous_number,
@@ -341,7 +336,15 @@ class RegulationParser:
                 )
 
                 if sequence.is_valid:
-                    title_line = lines[idx + 1] if idx + 1 < len(lines) else ""
+                    inline_title_match = re.search(
+                        r'^(?:ART\.|Articolo)\s+\d+(?:[-\s]*\w+)?\.?\s+(.+)$',
+                        line, re.IGNORECASE,
+                    )
+                    title_line = (
+                        inline_title_match.group(1).strip()
+                        if inline_title_match
+                        else (lines[idx + 1] if idx + 1 < len(lines) else "")
+                    )
                     codicearticolo = self._extract_article_code(
                         lines, idx + 1
                     )
@@ -355,6 +358,8 @@ class RegulationParser:
                     title_pending = True
                 else:
                     collector.add_content(line)
+            elif len(line) > self.max_heading_length:
+                continue
 
     def _extract_article_code(self, lines: Sequence[str], title_index: int) -> str:
         if 0 <= title_index < len(lines):

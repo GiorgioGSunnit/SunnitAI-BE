@@ -6,6 +6,16 @@ from pathlib import Path
 import re
 import os
 from lex_package.parsing_utils.parser_banca import identify_repeated_headers_footers
+from lex_package.utils.pdf_extract import extract_page_blocks
+
+
+def _flatten_table(table_data: list) -> str:
+    rows = []
+    for row in table_data:
+        cells = [str(c).strip() for c in row if c is not None and str(c).strip()]
+        if cells:
+            rows.append("  ".join(cells))
+    return "\n".join(rows)
 
 
 _SRCDIR = Path(__file__).resolve().parents[2]
@@ -152,58 +162,16 @@ def parser_capitolo(pdf_path, indice):
 
         for page_num in range(pagina_start, pagina_end):
             page = doc[page_num]
-            tabs = page.find_tables()
-
-            x0_t = 0
-            y0_t = 0
-            x1_t = 0
-            y1_t = 0
-
             debug_log.append(f"############################## Analizzo Pagina {page_num} ... ")
 
-            #############################################################################
-            ##################### TEST DI GESTIONE TABELLE ##############################
-            #############################################################################
-
-            if tabs.tables:
-                blocks = [b for b in page.get_text("blocks") if b[6] == 0]
-                for i, table in enumerate(tabs.tables):
-                    debug_log.append(f"    📌 ############################### Tabella {i+1} ###############################")
-                    data = table.extract()
-                    debug_log.append("    📌 ###   Contenuto nei blocchi " + str(len(data)))
-                    x0_t, y0_t, x1_t, y1_t = table.bbox
-                    debug_log.append(f"    📌 ###   Estremi: {x0_t}, {y0_t}, {x1_t}, {y1_t}")
-
-                    # Initialize page in content_by_page if not exists
-                    if page_num not in content_by_page:
-                        content_by_page[page_num] = {
-                            "page_number": page_num,
-                            "content": []
-                        }
-
-                    # Add table content to the specific page
-                    content_by_page[page_num]["content"].append({
-                        "type": "table",
-                        "index": i,
-                        "bbox": [x0_t, y0_t, x1_t, y1_t],
-                        "data": data,
-                        "used": False
-                    })
-                debug_log.append(f"    📌 #############################################################################")
-
-            lines = []
-            lines_span = []
-
-            blocks = page.get_text("blocks")
+            blocks = extract_page_blocks(page)
             height = page.rect.height
 
             debug_log.append(f"\n    📝 ############################### {str(len(blocks))} BLOCCHI ############################### ")
 
             for block in blocks:
-                y0 = block[1]
-                text = block[4].strip()
-
-                x0_b, y0_b, x1_b, y1_b, text, *_ = block
+                x0_b, y0_b, x1_b, y1_b = block["bbox"]
+                text = block["text"]
                 debug_log.append(f"    📝 ###   Estremi: {x0_b}, {y0_b}, {x1_b}, {y1_b}")
 
                 pos = 'top' if y0_b < height * 0.1 else 'bottom' if y0_b > height * 0.90 else 'middle'
@@ -217,19 +185,6 @@ def parser_capitolo(pdf_path, indice):
                 if text in repeated_lines:
                     debug_log.append("    📝 ###        Il testo è ripetuto     --> " + str(text) + "<--")
                     continue
-                if tabs.tables:
-                    for tabella in content_by_page[page_num]["content"]:
-                        x0_t, y0_t, x1_t, y1_t = tabella["bbox"]
-                        if ((x0_b >= x0_t) and (y0_b >= y0_t) and (x1_b <= x1_t) and (y1_b <= y1_t)):
-                            if ((tabella["type"] != "table") or (tabella["used"] == True)):
-                                # debug_log.append(f"    📝 ###        Il testo è nella tabella {i+1}     --> GIà USATA")
-                                continue
-                            # Il block è all'interno della table definita prima
-                            if (Titolo_Trovato == True):
-                                debug_log.append(f"    📝 ###        Il testo è nella tabella {i+1}     --> USIAMOLA!")
-                                TestoIntero += "\n" + str(tabella["data"])
-                                tabella["used"] = True
-                            continue
                 debug_log.append("                 Il testo normale --> " + str(text).replace("\n", " ") + " <--")
                 text_stripped = text.strip().replace("\n", " ")
 

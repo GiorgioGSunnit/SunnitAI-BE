@@ -30,6 +30,16 @@ import fitz  # PyMuPDF
 
 from .document_part import DocumentPart
 from .parser_banca import identify_repeated_headers_footers
+from lex_package.utils.pdf_extract import extract_page_blocks
+
+
+def _flatten_table(table_data: list) -> str:
+    rows = []
+    for row in table_data:
+        cells = [str(c).strip() for c in row if c is not None and str(c).strip()]
+        if cells:
+            rows.append("  ".join(cells))
+    return "\n".join(rows)
 
 # ─── Splitting constants ───────────────────────────────────────────────────────
 
@@ -156,38 +166,25 @@ def parser_general(pdf_path: str) -> list[dict]:
 
     for page_num in range(doc.page_count):
         page = doc[page_num]
-        page_dict = page.get_text("dict", flags=fitz.TEXT_PRESERVE_WHITESPACE)
         height = page.rect.height
-
-        # Sort blocks top-to-bottom, left-to-right
-        blocks = sorted(
-            (b for b in page_dict.get("blocks", []) if b.get("type") == 0),
-            key=lambda b: (round(b["bbox"][1] / 5) * 5, b["bbox"][0]),
-        )
-
-        for block in blocks:
-            plain, font, size = _block_text_and_meta(block)
-            if not plain:
+        for b in extract_page_blocks(page):
+            text = b["text"]
+            if not text:
                 continue
-
-            # Skip repeated headers / footers
-            if plain.strip().lower() in repeated_set:
+            if text.strip().lower() in repeated_set:
                 continue
-            # Skip lone page numbers
-            if re.fullmatch(r"\d{1,4}", plain.strip()):
+            if re.fullmatch(r"\d{1,4}", text.strip()):
                 continue
-
-            y0 = block["bbox"][1]
+            y0 = b["bbox"][1]
             is_hf = (y0 < height * 0.10) or (y0 > height * 0.90)
-            if is_hf and len(plain) < 80:
+            if is_hf and len(text) < 80:
                 continue
-
             raw_blocks.append({
-                "text": plain,
-                "is_title": _is_title_block(block, body_size),
-                "bbox": list(block["bbox"]),
-                "font": font,
-                "size": size,
+                "text": text,
+                "is_title": b["type"] == "title",
+                "bbox": list(b["bbox"]),
+                "font": None,
+                "size": None,
                 "page": page_num,
             })
 
