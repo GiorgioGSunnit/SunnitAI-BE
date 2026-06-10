@@ -19,25 +19,18 @@ from lex_package.utils.embeddings import embed_texts_batch_unconditional
 
 logger = logging.getLogger("lex_package.post_process")
 
-# ── Label mapping (SCREAMING_SNAKE_CASE → PascalCase) ─────────────────────────
+# ── Label conversion (SCREAMING_SNAKE_CASE → PascalCase) ──────────────────────
 
-_LABEL_MAPPING: dict[str, str] = {
+_LABEL_OVERRIDES = {
     "DOCUMENT_SECTION": "Section",
-    "LEGAL_DOC":        "Document",
-    "LEGAL_SOURCE":     "LegalAct",
-    "LEGAL_CONCEPT":    "Topic",
-    "LEGAL_ACTION":     "Penalty",
-    "ORGANIZATION":     "Institution",
-    "PERSON":           "Person",
-    "EDITOR":           "Editor",
-    "DATE":             "Date",
-    "ROLE":             "Role",
-    "LOCATION":         "Location",
+    "LEGAL_DOC": "Document",
 }
 
-
-def _to_pascal(label: str) -> str:
-    """Convert SCREAMING_SNAKE_CASE to PascalCase (e.g. LEGAL_EDITOR → LegalEditor)."""
+def _to_pascal_case(label: str) -> str:
+    if label in _LABEL_OVERRIDES:
+        return _LABEL_OVERRIDES[label]
+    if "_" not in label:
+        return label
     return "".join(word.capitalize() for word in label.split("_"))
 
 
@@ -100,12 +93,7 @@ def _step2_relabel(session, document_hash: str) -> str:
         # Build effective mapping for this document's labels
         effective: dict[str, str] = {}
         for lbl in existing_labels:
-            if lbl in _LABEL_MAPPING:
-                effective[lbl] = _LABEL_MAPPING[lbl]
-            elif lbl.isupper() or (lbl == lbl.upper() and "_" in lbl):
-                # Unknown uppercase label — auto-convert
-                effective[lbl] = _to_pascal(lbl)
-            # Already PascalCase or mixed — leave as-is
+            effective[lbl] = _to_pascal_case(lbl)
 
         relabeled = 0
         skipped = 0

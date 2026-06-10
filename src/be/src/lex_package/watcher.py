@@ -52,6 +52,7 @@ if str(_SRC_DIR) not in sys.path:
 from lex_package.analisi import analisi, consolida_analisi
 from lex_package.utils.flatten import flatten_analisi_invertito, build_neo4j_graph_payload
 from lex_package.utils.graph_writer import is_configured, write_graph_payload
+from lex_package.parsing_utils.parser_generic import parser_generic
 
 
 # ── Config ─────────────────────────────────────────────────────────────────────
@@ -110,6 +111,9 @@ async def process_pdf(pdf_path: Path, done_dir: Path, failed_dir: Path) -> bool:
         # ── 2. Flatten ─────────────────────────────────────────────────────────
         logger.info("  [2/4] Flattening analysis...")
         flattened = flatten_analisi_invertito(consolidated)
+        if not flattened:
+            logger.warning("  flatten_analisi_invertito returned empty — falling back to parser_generic")
+            flattened = parser_generic(pdf_path_str)
 
         # ── 3. Build Neo4J graph payload ───────────────────────────────────────
         logger.info("  [3/4] Building graph payload...")

@@ -196,6 +196,9 @@ def _vector_from_flat_record(r: dict) -> list[float]:
     return []
 
 
+MAX_SECTION_CHARS = 4000
+
+
 def build_neo4j_graph_payload(
     flattened_records: list[dict],
     document_name: str,
@@ -403,6 +406,42 @@ def build_neo4j_graph_payload(
         else:
             seen_section_names[section_name] = 1
 
+        references = _references_from_pagina(r.get("Pagina"))
+
+        if len(plain_text) > MAX_SECTION_CHARS:
+            chunks = []
+            words = plain_text.split()
+            current = []
+            for word in words:
+                current.append(word)
+                if len(" ".join(current)) >= MAX_SECTION_CHARS:
+                    chunks.append(" ".join(current))
+                    current = []
+            if current:
+                chunks.append(" ".join(current))
+
+            for i, chunk in enumerate(chunks):
+                chunk_section_name = f"{section_name}_{i}" if i > 0 else section_name
+                chunk_abstract = _trim_words(chunk, 200)
+                chunk_hash = stable_hash(chunk)
+                chunk_id = f"DOCUMENT_SECTION::{document_hash}::{chunk_hash[:20]}"
+                add_node(chunk_id, ["DOCUMENT_SECTION"], {
+                    "id": chunk_id,
+                    "name": chunk_section_name,
+                    "type": tipo,
+                    "abstract": chunk_abstract,
+                    "plain_text": chunk,
+                    "references": references,
+                    "vettore": [],
+                    "embedding_dim": None,
+                })
+                relationships.append({
+                    "type": "CONTAINS",
+                    "source": doc_node_id,
+                    "target": chunk_id,
+                })
+            continue
+
         vec = _vector_from_flat_record(r)
         if not vec:
             try:
@@ -430,7 +469,6 @@ def build_neo4j_graph_payload(
         section_key = (tipo, art, comma if tipo != "Articolo" else "")
         section_by_key[section_key] = section_id
 
-        references = _references_from_pagina(r.get("Pagina"))
         add_node(
             section_id,
             ["DOCUMENT_SECTION"],

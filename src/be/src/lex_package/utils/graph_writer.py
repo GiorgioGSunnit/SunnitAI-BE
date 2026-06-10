@@ -17,6 +17,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+
 # Labels that get a uniqueness constraint on their `id` property.
 # Order matters: constraints must exist before MERGE is called.
 _CONSTRAINED_LABELS = [

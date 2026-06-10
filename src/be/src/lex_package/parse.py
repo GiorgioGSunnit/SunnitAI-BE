@@ -13,6 +13,7 @@ from .parsing_utils.parser_gazzetta_ue import parser_gazzetta_ue
 from .parsing_utils.parser_annex_tabular import parser_annex_tabular
 from .parsing_utils.parser_general import parser_general, parts_to_articoli
 from .parsing_utils.parser_fallback_chunks import parser_fallback_chunks
+from .parsing_utils.parser_generic import parser_generic
 from .parsing_utils.document_profiler import profile_document
 from .parsing_utils.document_part import DocumentPart
 
@@ -238,7 +239,13 @@ def parse(
         import logging
         _logger = logging.getLogger(__name__)
         doc = fitz.open(str(pdf_path))
-        full_text = "\n".join(page.get_text() for page in doc)
+        full_text_parts = []
+        for page in doc:
+            try:
+                full_text_parts.append(page.get_text())
+            except Exception:
+                full_text_parts.append("")
+        full_text = "\n".join(full_text_parts)
         doc.close()
         if full_text.strip():
             _logger.warning(
@@ -247,6 +254,23 @@ def parse(
             )
             print(f"[WARN] Using generic chunk fallback for document {pdf_name} — no structural parser matched")
             articoli = parser_fallback_chunks(full_text)
+
+    # ── parser_generic fallback ───────────────────────────────────────────
+    if len(articoli) < 3:
+        print(f"[WARN] Primary parser yielded {len(articoli)} record(s); falling back to parser_generic for {pdf_name}")
+        for r in parser_generic(str(pdf_path)):
+            articoli.append({
+                "titolo": r["Titolo Articolo"],
+                "identificativo": r["Articolo"],
+                "contenuto": r["Contenuto"],
+                "page": r["Pagina"],
+                "contenuto_parsato": [{
+                    "identificativo": "0",
+                    "titolo_articolo": r["Titolo Articolo"],
+                    "contenuto": r["Contenuto"],
+                    "contenuto_parsato_2": [],
+                }],
+            })
 
     # ── Phase 4: Convert articoli → parts for Part-B readiness ───────────
     if articoli:
