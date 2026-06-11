@@ -58,6 +58,8 @@ import re
 import numpy as np
 from sklearn.linear_model import LinearRegression
 from urllib.parse import urlencode
+from jose import jwt as jose_jwt, JWTError
+import psycopg2
 
 # Monitoring: standard Python logging is used. Azure Monitor removed.
 
@@ -71,6 +73,57 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 load_dotenv()
+
+
+def _verify_jwt(req) -> dict | None:
+    """Extract and verify JWT from Authorization header.
+    Returns decoded payload dict, or None if missing/invalid."""
+    auth = req.headers.get("Authorization", "") or req.headers.get("authorization", "")
+    if not auth.startswith("Bearer "):
+        return None
+    token = auth[7:]
+    secret = os.getenv("JWT_SECRET_KEY", "change-me-in-production")
+    try:
+        return jose_jwt.decode(token, secret, algorithms=["HS256"])
+    except JWTError:
+        return None
+
+
+def _save_private_document(file_content: bytes, filename: str,
+                            user_id: str, tenant_id: str) -> str:
+    """Save a private document to local storage.
+    Returns the saved file path."""
+    base_dir = Path(os.getenv("PRIVATE_DOCS_DIR",
+                              "/opt/chatbot/data/private_documents"))
+    user_dir = base_dir / tenant_id / user_id
+    user_dir.mkdir(parents=True, exist_ok=True)
+    file_path = user_dir / filename
+    file_path.write_bytes(file_content)
+    return str(file_path)
+
+
+def _record_private_document(user_id: str, tenant_id: str,
+                              filename: str, file_path: str) -> None:
+    """Record a private document in PostgreSQL."""
+    conn = psycopg2.connect(
+        host=os.getenv("PG_HOST", "127.0.0.1"),
+        port=int(os.getenv("PG_PORT", 5432)),
+        dbname=os.getenv("PG_DATABASE", "astrea"),
+        user=os.getenv("PG_USER", "astrea_admin"),
+        password=os.getenv("PG_PASSWORD", ""),
+    )
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO documents
+                (user_id, tenant_id, filename, file_path, created_at)
+                VALUES (%s, %s, %s, %s, NOW())
+                ON CONFLICT DO NOTHING
+            """, (user_id, tenant_id, filename, file_path))
+        conn.commit()
+    finally:
+        conn.close()
+
 
 # Azure Function App
 app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
@@ -4690,6 +4743,40 @@ def ingest_full_pipeline(req: func.HttpRequest) -> func.HttpResponse:
                 status_code=400,
                 mimetype="application/json",
             )
+
+        # Auth check — optional for now, gates on role when token present
+        payload = _verify_jwt(req)
+        if payload is not None:
+            role = payload.get("role", "user")
+            user_id = payload.get("sub", "")
+            tenant_id = payload.get("tenant_id", "")
+
+            if role != "admin":
+                # Regular user — save to private storage instead
+                file_content = file.stream.read()
+                file_path = _save_private_document(
+                    file_content, file.filename, user_id, tenant_id
+                )
+                try:
+                    _record_private_document(
+                        user_id, tenant_id, file.filename, file_path
+                    )
+                except Exception as e:
+                    logger.warning("Could not record private document in DB: %s", e)
+
+                return func.HttpResponse(
+                    json.dumps({
+                        "status": "saved",
+                        "message": "Document saved to private storage",
+                        "filename": file.filename,
+                        "path": file_path,
+                    }),
+                    status_code=200,
+                    mimetype="application/json",
+                )
+            # Admin — fall through to normal pipeline ingestion
+            # Reset stream position after potential read above
+            file.stream.seek(0)
 
         input_data = {
             "filename": file.filename,
