@@ -45,7 +45,21 @@ def extract_page_text(
         # Normal path — extract prose blocks from PDF text layer
         kwargs = {"clip": clip} if clip else {}
         blocks = page.get_text("blocks", **kwargs)
-        blocks = sorted(blocks, key=lambda b: (round(b[1] / 10) * 10, b[0]))
+        if blocks:
+            page_width = max(b[2] for b in blocks) if blocks else 0
+            if page_width > 0:
+                page_mid = page_width / 2
+                left = [b for b in blocks if (b[0] + b[2]) / 2 < page_mid]
+                right = [b for b in blocks if (b[0] + b[2]) / 2 >= page_mid]
+                if (len(left) >= 3 and len(right) >= 3 and
+                        0.25 <= len(left) / len(blocks) <= 0.75):
+                    left_sorted = sorted(left, key=lambda b: (round(b[1] / 10) * 10, b[0]))
+                    right_sorted = sorted(right, key=lambda b: (round(b[1] / 10) * 10, b[0]))
+                    blocks = left_sorted + right_sorted
+                else:
+                    blocks = sorted(blocks, key=lambda b: (round(b[1] / 10) * 10, b[0]))
+            else:
+                blocks = sorted(blocks, key=lambda b: (round(b[1] / 10) * 10, b[0]))
         for b in blocks:
             if len(b) > 4 and b[4].strip():
                 parts.append(b[4].strip())
@@ -80,6 +94,32 @@ def _median_body_size(page: fitz.Page) -> float:
         return 11.0
     sizes.sort()
     return sizes[len(sizes) // 2]
+
+
+def _detect_columns(blocks: list, page_width: float) -> int:
+    """
+    Detect number of columns on a page by analysing x-coordinate
+    distribution of blocks.
+    Returns 1 for single column, 2 for two-column layout.
+    """
+    if not blocks or page_width <= 0:
+        return 1
+
+    # Collect x-midpoints of all blocks
+    midpoints = [(b["bbox"][0] + b["bbox"][2]) / 2 for b in blocks]
+    if not midpoints:
+        return 1
+
+    page_mid = page_width / 2
+    left_count = sum(1 for m in midpoints if m < page_mid)
+    right_count = sum(1 for m in midpoints if m >= page_mid)
+
+    # Two-column if blocks are roughly evenly split between
+    # left and right halves, with at least 3 blocks per side
+    if (left_count >= 3 and right_count >= 3 and
+            0.25 <= left_count / len(midpoints) <= 0.75):
+        return 2
+    return 1
 
 
 def extract_page_blocks(
@@ -165,4 +205,23 @@ def extract_page_blocks(
         pass
 
     # Sort all blocks in reading order: top-to-bottom, left-to-right
+    if not result:
+        return result
+
+    # Get page width from the rightmost bbox edge seen
+    page_width = max(b["bbox"][2] for b in result)
+    num_columns = _detect_columns(result, page_width)
+
+    if num_columns == 2:
+        page_mid = page_width / 2
+        left_blocks = [b for b in result if (b["bbox"][0] + b["bbox"][2]) / 2 < page_mid]
+        right_blocks = [b for b in result if (b["bbox"][0] + b["bbox"][2]) / 2 >= page_mid]
+
+        # Sort each column top-to-bottom independently
+        left_sorted = sorted(left_blocks, key=lambda x: (round(x["bbox"][1] / 10) * 10, x["bbox"][0]))
+        right_sorted = sorted(right_blocks, key=lambda x: (round(x["bbox"][1] / 10) * 10, x["bbox"][0]))
+
+        return left_sorted + right_sorted
+
+    # Single column — original sort
     return sorted(result, key=lambda x: (round(x["bbox"][1] / 10) * 10, x["bbox"][0]))

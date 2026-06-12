@@ -458,9 +458,12 @@ def build_neo4j_graph_payload(
             embedding_dim = len(vec)
         requirement = str(r.get("Requirement", "")).strip()
         core_text = str(r.get("Core Text", "")).strip()
+        titolo_articolo = str(r.get("Titolo Articolo", "")).strip()
         abstract = requirement if requirement else _trim_words(plain_text, 200)
         if core_text:
             abstract = f"{abstract} Testo significativo: {core_text}".strip()
+        if titolo_articolo and titolo_articolo not in abstract:
+            abstract = f"{titolo_articolo} - {abstract}"
         abstract = _trim_words(abstract, 200)
         section_abstracts.append(abstract)
 

@@ -14,10 +14,62 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 
 from lex_package.utils.embeddings import embed_texts_batch_unconditional
 
 logger = logging.getLogger("lex_package.post_process")
+
+
+def _generate_section_abstract(
+    plain_text: str,
+    section_name: str,
+    existing_abstract: str,
+    titolo_articolo: str = "",
+) -> str:
+    """Generate a rich abstract using the LLM for short sections.
+    Returns enriched abstract or existing one on any failure."""
+    import os, requests
+    llm_base = os.getenv("LLM_BASE_URL", "").rstrip("/")
+    if not llm_base:
+        return existing_abstract
+
+    title_hint = f"Titolo: {titolo_articolo}\n" if titolo_articolo else ""
+    prompt = (
+        f"Sei un esperto di diritto italiano. "
+        f"Genera un abstract conciso (max 100 parole) per questa "
+        f"sezione di un testo legale italiano. "
+        f"Includi: il concetto legale principale, i termini tecnici "
+        f"che un avvocato userebbe per cercare questa norma, e il "
+        f"contenuto essenziale della disposizione. "
+        f"Rispondi SOLO con l'abstract, senza prefissi.\n\n"
+        f"Articolo: {section_name}\n"
+        f"{title_hint}"
+        f"Testo: {plain_text[:300]}"
+    )
+    try:
+        resp = requests.post(
+            f"{llm_base}/chat/completions",
+            json={
+                "model": os.getenv("LLM_MODEL", ""),
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0,
+                "max_tokens": 150,
+            },
+            headers={
+                "Authorization": f"Bearer {os.getenv('LLM_API_KEY', '')}",
+                "Content-Type": "application/json",
+            },
+            timeout=15,
+        )
+        resp.raise_for_status()
+        generated = resp.json()["choices"][0]["message"]["content"].strip()
+        if titolo_articolo and titolo_articolo not in generated:
+            generated = f"{titolo_articolo} - {generated}"
+        return generated
+    except Exception:
+        return existing_abstract
+
 
 # ── Label conversion (SCREAMING_SNAKE_CASE → PascalCase) ──────────────────────
 
@@ -220,7 +272,9 @@ def _step2b_fix_section_properties(session, document_hash: str) -> str:
             MATCH (d:Document)-[:CONTAINS]->(s:Section)
             WHERE d.hash = $document_hash
               AND s.plain_text IS NOT NULL AND s.plain_text <> ""
-            RETURN elementId(s) AS eid, s.plain_text AS plain_text
+            RETURN elementId(s) AS eid, s.plain_text AS plain_text,
+                   s.name AS name, s.abstract AS abstract,
+                   coalesce(s.titolo_articolo, '') AS titolo_articolo
             """,
             document_hash=document_hash,
         ).data()
@@ -232,6 +286,29 @@ def _step2b_fix_section_properties(session, document_hash: str) -> str:
                     eid=row["eid"],
                     text=cleaned,
                 )
+            if len(cleaned.strip()) < 200:
+                section_name = row.get("name", "") or ""
+                if section_name and re.match(r'^\d+(\.\d+)+$', section_name.strip()):
+                    abstract = row.get("abstract", "") or ""
+                    if not abstract.startswith(section_name):
+                        session.run(
+                            "MATCH (s) WHERE elementId(s) = $eid SET s.abstract = $abstract",
+                            eid=row["eid"],
+                            abstract=f"{section_name} - {abstract}",
+                        )
+            # LLM abstract enrichment for short sections only
+            if len(cleaned.strip()) < 150:
+                titolo = row.get("titolo_articolo", "") or ""
+                current_abstract = row.get("abstract", "") or ""
+                enriched = _generate_section_abstract(
+                    cleaned, row.get("name", "") or "", current_abstract, titolo
+                )
+                if enriched and enriched != current_abstract:
+                    session.run(
+                        "MATCH (s:Section) WHERE elementId(s) = $eid "
+                        "SET s.abstract = $abstract",
+                        eid=row["eid"], abstract=enriched,
+                    )
         logger.debug("post_process step2b: cleaned plain_text for %d sections", len(rows))
 
         # Clear embeddings so Step 3 re-generates with clean text
