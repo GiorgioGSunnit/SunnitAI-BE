@@ -71,6 +71,60 @@ def _generate_section_abstract(
         return existing_abstract
 
 
+def _generate_section_title(
+    plain_text: str,
+    section_name: str,
+    titolo_articolo: str = "",
+    existing_abstract: str = "",
+) -> str:
+    """Generate a short title (3-8 words) describing what this
+    legal section is about. Returns empty string on any failure."""
+    import os, requests
+    llm_base = os.getenv("LLM_BASE_URL", "").rstrip("/")
+    if not llm_base:
+        return ""
+    title_hint = f"Titolo articolo (se noto): {titolo_articolo}\n" if titolo_articolo else ""
+    abstract_hint = f"Contesto/abstract esistente: {existing_abstract[:300]}\n" if existing_abstract else ""
+    prompt = (
+        f"Sei un esperto di diritto italiano. "
+        f"Genera un titolo brevissimo (massimo 8 parole) che descriva "
+        f"l'argomento di questa sezione di un testo legale italiano. "
+        f"Il titolo deve essere il nome dell'istituto giuridico o reato "
+        f"trattato (es. 'Resistenza a un pubblico ufficiale', 'Omicidio colposo'). "
+        f"ATTENZIONE: il testo della sezione potrebbe essere un frammento "
+        f"incompleto (es. un rinvio a circostanze elencate altrove). In tal "
+        f"caso usa il contesto/abstract esistente, se fornito, per capire "
+        f"l'argomento reale; non inventare dettagli non presenti nel testo o "
+        f"nel contesto. "
+        f"Rispondi SOLO con il titolo, senza virgolette, senza punteggiatura finale, "
+        f"senza prefissi come 'Titolo:'.\n\n"
+        f"Articolo: {section_name}\n"
+        f"{title_hint}"
+        f"{abstract_hint}"
+        f"Testo: {plain_text[:300]}"
+    )
+    try:
+        resp = requests.post(
+            f"{llm_base}/chat/completions",
+            json={
+                "model": os.getenv("LLM_MODEL", ""),
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0,
+                "max_tokens": 30,
+            },
+            headers={
+                "Authorization": f"Bearer {os.getenv('LLM_API_KEY', '')}",
+                "Content-Type": "application/json",
+            },
+            timeout=15,
+        )
+        resp.raise_for_status()
+        title = resp.json()["choices"][0]["message"]["content"].strip()
+        return title.strip('"\'.,')
+    except Exception:
+        return ""
+
+
 # ── Label conversion (SCREAMING_SNAKE_CASE → PascalCase) ──────────────────────
 
 _LABEL_OVERRIDES = {
@@ -308,6 +362,23 @@ def _step2b_fix_section_properties(session, document_hash: str) -> str:
                         "MATCH (s:Section) WHERE elementId(s) = $eid "
                         "SET s.abstract = $abstract",
                         eid=row["eid"], abstract=enriched,
+                    )
+            # Title generation — runs for every section unless a usable
+            # title can already be derived from the existing "- Title -"
+            # abstract pattern (cheap, no LLM call needed in that case).
+            current_abstract_for_title = row.get("abstract", "") or ""
+            existing_title_match = re.match(r"^-\s*(.+?)\s*-", current_abstract_for_title)
+            if not existing_title_match:
+                titolo = row.get("titolo_articolo", "") or ""
+                generated_title = _generate_section_title(
+                    cleaned, row.get("name", "") or "", titolo,
+                    existing_abstract=current_abstract_for_title,
+                )
+                if generated_title:
+                    session.run(
+                        "MATCH (s:Section) WHERE elementId(s) = $eid "
+                        "SET s.title = $title",
+                        eid=row["eid"], title=generated_title,
                     )
         logger.debug("post_process step2b: cleaned plain_text for %d sections", len(rows))
 
