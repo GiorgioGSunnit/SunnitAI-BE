@@ -60,6 +60,7 @@ from sklearn.linear_model import LinearRegression
 from urllib.parse import urlencode
 from jose import jwt as jose_jwt, JWTError
 import psycopg2
+import uuid
 
 # Monitoring: standard Python logging is used. Azure Monitor removed.
 
@@ -89,22 +90,41 @@ def _verify_jwt(req) -> dict | None:
         return None
 
 
-def _save_private_document(file_content: bytes, filename: str,
-                            user_id: str, tenant_id: str) -> str:
-    """Save a private document to local storage.
-    Returns the saved file path."""
-    base_dir = Path(os.getenv("PRIVATE_DOCS_DIR",
-                              "/opt/chatbot/data/private_documents"))
+def _require_jwt(req) -> dict:
+    """Like _verify_jwt but raises ValueError("UNAUTHORIZED") if token is missing or invalid."""
+    payload = _verify_jwt(req)
+    if payload is None:
+        raise ValueError("UNAUTHORIZED")
+    return payload
+
+
+def _require_superadmin(req) -> dict:
+    """Raises ValueError("UNAUTHORIZED") or ValueError("FORBIDDEN") if not admin or superadmin."""
+    payload = _require_jwt(req)
+    if payload.get("role") not in ("superadmin", "admin"):
+        raise ValueError("FORBIDDEN")
+    return payload
+
+
+def _save_private_document(
+    file_content: bytes, original_filename: str,
+    user_id: str, tenant_id: str, doc_id: str
+) -> str:
+    """Save a private document to local storage using doc_id as filename.
+    Returns the absolute storage path."""
+    base_dir = Path(os.getenv("PRIVATE_DOCS_DIR", "/opt/chatbot/data/private_documents"))
     user_dir = base_dir / tenant_id / user_id
     user_dir.mkdir(parents=True, exist_ok=True)
-    file_path = user_dir / filename
+    file_path = user_dir / f"{doc_id}.pdf"
     file_path.write_bytes(file_content)
     return str(file_path)
 
 
-def _record_private_document(user_id: str, tenant_id: str,
-                              filename: str, file_path: str) -> None:
-    """Record a private document in PostgreSQL."""
+def _record_private_document(
+    doc_id: str, user_id: str, tenant_id: str,
+    original_filename: str, storage_path: str, file_size_bytes: int
+) -> None:
+    """Insert a row into the shared user_documents table (managed by V2 Alembic migration)."""
     conn = psycopg2.connect(
         host=os.getenv("PG_HOST", "127.0.0.1"),
         port=int(os.getenv("PG_PORT", 5432)),
@@ -114,12 +134,14 @@ def _record_private_document(user_id: str, tenant_id: str,
     )
     try:
         with conn.cursor() as cur:
-            cur.execute("""
-                INSERT INTO documents
-                (user_id, tenant_id, filename, file_path, created_at)
-                VALUES (%s, %s, %s, %s, NOW())
-                ON CONFLICT DO NOTHING
-            """, (user_id, tenant_id, filename, file_path))
+            cur.execute(
+                """
+                INSERT INTO user_documents
+                    (id, user_id, tenant_id, original_filename, storage_path, file_size_bytes)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """,
+                (doc_id, user_id, tenant_id, original_filename, storage_path, file_size_bytes),
+            )
         conn.commit()
     finally:
         conn.close()
@@ -824,6 +846,17 @@ def ingest(req: func.HttpRequest) -> func.HttpResponse:
     Returns 202 immediately with a job ID. Poll GET /api/job/<id> for progress.
     """
     try:
+        # Superadmin only — full pipeline writes to Neo4j
+        try:
+            payload = _require_superadmin(req)
+        except ValueError as e:
+            status = 401 if str(e) == "UNAUTHORIZED" else 403
+            return func.HttpResponse(
+                json.dumps({"error": str(e).lower()}),
+                status_code=status,
+                mimetype="application/json",
+            )
+
         file = req.files.get("file")
         if not file:
             return func.HttpResponse(
@@ -843,6 +876,8 @@ def ingest(req: func.HttpRequest) -> func.HttpResponse:
             "filename": file.filename,
             "file_content": base64.b64encode(file.stream.read()).decode("utf-8"),
             "template": None,
+            "user_id": payload.get("sub", ""),
+            "tenant_id": payload.get("tenant_id", ""),
         }
 
         queue_position = increment_active("pipeline")
@@ -872,6 +907,85 @@ def ingest(req: func.HttpRequest) -> func.HttpResponse:
 
     except Exception as e:
         logger.error(f"ingest error: {e}")
+        return func.HttpResponse(
+            json.dumps({"error": str(e)}), status_code=500, mimetype="application/json"
+        )
+
+
+@app.route(route="user/documents", methods=["POST"])
+def upload_user_document(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    POST /api/user/documents  (multipart/form-data)
+        file — PDF binary (required)
+
+    Requires: valid JWT for any logged-in user (admin, member, superadmin).
+    Saves the PDF as a private document for the authenticated user.
+    Records metadata in the shared user_documents PostgreSQL table.
+
+    Returns 201:
+        { "id": "<uuid>", "original_filename": "...", "file_size_bytes": 12345 }
+    """
+    try:
+        try:
+            payload = _require_jwt(req)
+        except ValueError:
+            return func.HttpResponse(
+                json.dumps({"error": "Authentication required"}),
+                status_code=401,
+                mimetype="application/json",
+            )
+
+        user_id = payload.get("sub", "")
+        tenant_id = payload.get("tenant_id", "")
+
+        if not user_id or not tenant_id:
+            return func.HttpResponse(
+                json.dumps({"error": "Invalid token claims"}),
+                status_code=401,
+                mimetype="application/json",
+            )
+
+        file = req.files.get("file")
+        if not file:
+            return func.HttpResponse(
+                json.dumps({"error": "No file provided"}),
+                status_code=400,
+                mimetype="application/json",
+            )
+
+        content = file.stream.read()
+
+        if not content.startswith(b"%PDF"):
+            return func.HttpResponse(
+                json.dumps({"error": "Only PDF files are accepted"}),
+                status_code=400,
+                mimetype="application/json",
+            )
+
+        doc_id = str(uuid.uuid4())
+        original_filename = file.filename or "document.pdf"
+        file_size_bytes = len(content)
+
+        storage_path = _save_private_document(
+            content, original_filename, user_id, tenant_id, doc_id
+        )
+
+        _record_private_document(
+            doc_id, user_id, tenant_id, original_filename, storage_path, file_size_bytes
+        )
+
+        return func.HttpResponse(
+            json.dumps({
+                "id": doc_id,
+                "original_filename": original_filename,
+                "file_size_bytes": file_size_bytes,
+            }),
+            status_code=201,
+            mimetype="application/json",
+        )
+
+    except Exception as e:
+        logger.error("upload_user_document error: %s", e)
         return func.HttpResponse(
             json.dumps({"error": str(e)}), status_code=500, mimetype="application/json"
         )
@@ -4603,9 +4717,18 @@ def _run_full_pipeline_job(job_id: str, input_data: dict):
         file_name    = input_data["filename"]
         doc_name     = os.path.splitext(file_name)[0]
         template_hint = input_data.get("template") or None
+        user_id   = input_data.get("user_id", "")
+        tenant_id = input_data.get("tenant_id", "")
 
         job_start = time.perf_counter()
         logger.info("Full pipeline job %s START — file=%s", job_id, file_name)
+
+        # Persist the PDF to private documents storage
+        if user_id and tenant_id:
+            base_dir = Path(os.getenv("PRIVATE_DOCS_DIR", "/opt/chatbot/data/private_documents"))
+            dest_dir = base_dir / tenant_id / user_id
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            (dest_dir / file_name).write_bytes(file_content)
 
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
             tmp.write(file_content)
@@ -4697,38 +4820,20 @@ def _run_full_pipeline_job(job_id: str, input_data: dict):
 def ingest_full_pipeline(req: func.HttpRequest) -> func.HttpResponse:
     """
     POST /api/pipeline  (multipart/form-data)
-
-    Runs the full ingestion pipeline on an uploaded PDF:
-        parse → LLM analysis → flatten → Neo4J write
-
-    Fields:
-        file      PDF binary   required
-        template  string       optional — force parser: banca | regolamento |
-                               annex_tabular | boe | gazzetta_ue
-
-    Response 202:
-        {
-          "id": "<job_id>",
-          "statusQueryGetUri": "/api/job/<job_id>",
-          "status": "Pending",
-          "filename": "<original filename>"
-        }
-
-    Poll GET /api/job/<job_id> until runtimeStatus == "Completed".
-    The result field will contain:
-        {
-          "filename": "...",
-          "nodes_written": 42,
-          "relationships_written": 91,
-          "neo4j_enabled": true
-        }
-    custom_status shows the current step:
-        { "step": "parsing_and_analysis", "progress": "1/4" }
-        { "step": "flattening",           "progress": "2/4" }
-        { "step": "building_graph",       "progress": "3/4" }
-        { "step": "writing_neo4j",        "progress": "4/4" }
+    Superadmin only. Runs the full ingestion pipeline: parse → LLM → flatten → Neo4J → embeddings.
+    For user private document uploads use POST /api/user/documents instead.
     """
     try:
+        try:
+            payload = _require_superadmin(req)
+        except ValueError as e:
+            status_code = 401 if str(e) == "UNAUTHORIZED" else 403
+            return func.HttpResponse(
+                json.dumps({"error": str(e).lower()}),
+                status_code=status_code,
+                mimetype="application/json",
+            )
+
         file = req.files.get("file")
         if not file:
             return func.HttpResponse(
@@ -4744,44 +4849,12 @@ def ingest_full_pipeline(req: func.HttpRequest) -> func.HttpResponse:
                 mimetype="application/json",
             )
 
-        # Auth check — optional for now, gates on role when token present
-        payload = _verify_jwt(req)
-        if payload is not None:
-            role = payload.get("role", "user")
-            user_id = payload.get("sub", "")
-            tenant_id = payload.get("tenant_id", "")
-
-            if role != "admin":
-                # Regular user — save to private storage instead
-                file_content = file.stream.read()
-                file_path = _save_private_document(
-                    file_content, file.filename, user_id, tenant_id
-                )
-                try:
-                    _record_private_document(
-                        user_id, tenant_id, file.filename, file_path
-                    )
-                except Exception as e:
-                    logger.warning("Could not record private document in DB: %s", e)
-
-                return func.HttpResponse(
-                    json.dumps({
-                        "status": "saved",
-                        "message": "Document saved to private storage",
-                        "filename": file.filename,
-                        "path": file_path,
-                    }),
-                    status_code=200,
-                    mimetype="application/json",
-                )
-            # Admin — fall through to normal pipeline ingestion
-            # Reset stream position after potential read above
-            file.stream.seek(0)
-
         input_data = {
             "filename": file.filename,
             "file_content": base64.b64encode(file.stream.read()).decode("utf-8"),
             "template": req.form.get("template"),
+            "user_id": payload.get("sub", ""),
+            "tenant_id": payload.get("tenant_id", ""),
         }
 
         queue_position = increment_active("pipeline")
