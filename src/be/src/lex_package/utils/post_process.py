@@ -110,7 +110,7 @@ def _generate_section_title(
                 "model": os.getenv("LLM_MODEL", ""),
                 "messages": [{"role": "user", "content": prompt}],
                 "temperature": 0,
-                "max_tokens": 30,
+                "max_tokens": 50,
             },
             headers={
                 "Authorization": f"Bearer {os.getenv('LLM_API_KEY', '')}",
