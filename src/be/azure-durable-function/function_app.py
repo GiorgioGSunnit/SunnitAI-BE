@@ -115,7 +115,8 @@ def _save_private_document(
     base_dir = Path(os.getenv("PRIVATE_DOCS_DIR", "/opt/chatbot/data/private_documents"))
     user_dir = base_dir / tenant_id / user_id
     user_dir.mkdir(parents=True, exist_ok=True)
-    file_path = user_dir / f"{doc_id}.pdf"
+    ext = Path(original_filename).suffix.lower() or ".pdf"
+    file_path = user_dir / f"{doc_id}{ext}"
     file_path.write_bytes(file_content)
     return str(file_path)
 
@@ -955,15 +956,16 @@ def upload_user_document(req: func.HttpRequest) -> func.HttpResponse:
 
         content = file.stream.read()
 
-        if not content.startswith(b"%PDF"):
+        original_filename = file.filename or "document"
+        _allowed_ext = {".pdf", ".docx", ".txt"}
+        if not any(original_filename.lower().endswith(ext) for ext in _allowed_ext):
             return func.HttpResponse(
-                json.dumps({"error": "Only PDF files are accepted"}),
+                json.dumps({"error": "Only PDF, DOCX and TXT files are accepted"}),
                 status_code=400,
                 mimetype="application/json",
             )
 
         doc_id = str(uuid.uuid4())
-        original_filename = file.filename or "document.pdf"
         file_size_bytes = len(content)
 
         storage_path = _save_private_document(
