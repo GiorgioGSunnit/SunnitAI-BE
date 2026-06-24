@@ -4768,9 +4768,49 @@ def _run_full_pipeline_job(job_id: str, input_data: dict):
             )
             logger.info("Full pipeline job %s: step 3 (build graph) done in %.1fs", job_id, time.perf_counter() - t)
 
+            # ── 3b. Deduplication check ───────────────────────────────────────
+            # Before writing, check if a document with the same title already
+            # exists in Neo4J. If yes, store the duplicate info so we can
+            # surface it to the caller — the actual deletion happens only when
+            # the caller confirms (see duplicate_doc_id in the job result).
+            from lex_package.utils.graph_writer import (
+                is_configured, write_graph_payload,
+                find_document_by_name, delete_document_by_id,
+            )
+
+            duplicate_deleted = None
+            if is_configured():
+                # Extract the official title from the payload
+                _doc_nodes = [
+                    n for n in payload.get("nodes", [])
+                    if "LEGAL_DOC" in (n.get("labels") or [])
+                ]
+                _new_title = (
+                    _doc_nodes[0]["properties"].get("name", "")
+                    if _doc_nodes else ""
+                )
+                _new_doc_id = f"LEGAL_DOC::{doc_hash}"
+
+                if _new_title:
+                    _existing = find_document_by_name(_new_title)
+                    # Filter out the document we're about to write (same hash)
+                    _dupes = [
+                        d for d in _existing
+                        if d["id"] != _new_doc_id
+                    ]
+                    if _dupes:
+                        logger.info(
+                            "Full pipeline job %s: found %d duplicate(s) for title %r — "
+                            "deleting before write: %s",
+                            job_id, len(_dupes), _new_title,
+                            [d["id"] for d in _dupes],
+                        )
+                        for _dupe in _dupes:
+                            delete_document_by_id(_dupe["id"])
+                        duplicate_deleted = [d["file_name"] for d in _dupes]
+
             # ── 4. Write to Neo4J ─────────────────────────────────────────────
             set_running(job_id, {"step": "writing_neo4j", "progress": "4/4"})
-            from lex_package.utils.graph_writer import is_configured, write_graph_payload
 
             nodes_written, rels_written = 0, 0
             if is_configured():
@@ -4798,12 +4838,15 @@ def _run_full_pipeline_job(job_id: str, input_data: dict):
                 job_id, time.perf_counter() - t, pp_result,
             )
 
-        set_completed(job_id, {
+        _completion = {
             "filename": file_name,
             "nodes_written": nodes_written,
             "relationships_written": rels_written,
             "neo4j_enabled": is_configured(),
-        })
+        }
+        if duplicate_deleted:
+            _completion["replaced_documents"] = duplicate_deleted
+        set_completed(job_id, _completion)
         logger.info("Full pipeline job %s COMPLETE — total %.1fs", job_id, time.perf_counter() - job_start)
 
         # ── 6. Embedding generation (background — does not block job completion) ─

@@ -250,6 +250,125 @@ def _write_relationships_batched(session, relationships: list[dict]) -> int:
     return total
 
 
+def _normalize_title(title: str) -> str:
+    """
+    Normalise a document title for fuzzy matching:
+    - lowercase + strip whitespace
+    - remove years (4-digit numbers)
+    - remove common Italian legal suffixes and edition markers
+    - collapse multiple spaces
+    """
+    import re as _re
+    t = title.lower().strip()
+    # Remove years (e.g. 2022, 2026)
+    t = _re.sub(r'\b\d{4}\b', '', t)
+    # Remove edition/version markers
+    t = _re.sub(r'\b(aggiornato|aggiornata|edizione|ed\.|versione|vers\.|n\.|nr\.)\b', '', t)
+    # Remove punctuation except spaces
+    t = _re.sub(r'[^\w\s]', ' ', t)
+    # Collapse spaces
+    t = _re.sub(r'\s+', ' ', t).strip()
+    return t
+
+
+def find_document_by_name(name: str) -> list[dict]:
+    """
+    Return all LEGAL_DOC nodes whose title fuzzy-matches the given name.
+
+    Matching strategy (in order of strictness):
+      1. Exact match after normalisation (lowercase, strip years/punctuation)
+      2. One normalised title contains the other (substring match)
+
+    Returns a list of dicts with keys: id, name, hash, file_name.
+    Empty list if none found or Neo4J is not configured.
+    """
+    if not is_configured():
+        return []
+    driver = _get_driver()
+    database = os.environ.get("NEO4J_DATABASE", "neo4j")
+    try:
+        with driver.session(database=database) as session:
+            # Fetch all LEGAL_DOC nodes — we do the fuzzy match in Python
+            # since Cypher has limited string normalisation capabilities.
+            # The corpus is typically < 10k documents so this is fast.
+            result = session.run(
+                """
+                MATCH (d:LEGAL_DOC)
+                WHERE d.name IS NOT NULL AND trim(d.name) <> ''
+                RETURN d.id AS id, d.name AS name, d.hash AS hash,
+                       d.file_name AS file_name
+                """
+            )
+            all_docs = [dict(r) for r in result]
+
+        new_norm = _normalize_title(name)
+        matches = []
+        for doc in all_docs:
+            existing_norm = _normalize_title(doc["name"] or "")
+            if not existing_norm:
+                continue
+            # Exact normalised match OR one contains the other
+            if (
+                new_norm == existing_norm
+                or new_norm in existing_norm
+                or existing_norm in new_norm
+            ):
+                matches.append(doc)
+                logger.debug(
+                    "find_document_by_name: %r matched existing %r "
+                    "(normalised: %r vs %r)",
+                    name, doc["name"], new_norm, existing_norm,
+                )
+        return matches
+    finally:
+        driver.close()
+
+
+def delete_document_by_id(doc_node_id: str) -> dict:
+    """
+    Delete a LEGAL_DOC node and all nodes reachable from it
+    (DOCUMENT_SECTION, EDITOR, LEGAL_SOURCE if orphaned).
+    Returns counts of deleted nodes and relationships.
+
+    Safe to call with a non-existent id — returns zeros.
+    """
+    if not is_configured():
+        return {"nodes": 0, "relationships": 0}
+    driver = _get_driver()
+    database = os.environ.get("NEO4J_DATABASE", "neo4j")
+    try:
+        with driver.session(database=database) as session:
+            # Delete all DOCUMENT_SECTION nodes for this doc + their relationships
+            section_result = session.run(
+                """
+                MATCH (d:LEGAL_DOC {id: $doc_id})-[*1..3]-(s:DOCUMENT_SECTION)
+                DETACH DELETE s
+                RETURN count(s) AS deleted
+                """,
+                doc_id=doc_node_id,
+            )
+            sections_deleted = (section_result.single() or {}).get("deleted", 0)
+
+            # Delete the LEGAL_DOC node itself and its direct relationships
+            doc_result = session.run(
+                """
+                MATCH (d:LEGAL_DOC {id: $doc_id})
+                DETACH DELETE d
+                RETURN count(d) AS deleted
+                """,
+                doc_id=doc_node_id,
+            )
+            docs_deleted = (doc_result.single() or {}).get("deleted", 0)
+
+            logger.info(
+                "graph_writer: deleted LEGAL_DOC %s — %d sections, %d doc nodes",
+                doc_node_id, sections_deleted, docs_deleted,
+            )
+            return {"nodes": sections_deleted + docs_deleted, "relationships": 0}
+    finally:
+        driver.close()
+
+
 def write_graph_payload(payload: dict[str, Any]) -> tuple[int, int]:
     """
     Write a graph payload to Neo4J.
