@@ -99,9 +99,9 @@ def _require_jwt(req) -> dict:
 
 
 def _require_superadmin(req) -> dict:
-    """Raises ValueError("UNAUTHORIZED") or ValueError("FORBIDDEN") if not admin or superadmin."""
+    """Raises ValueError("UNAUTHORIZED") or ValueError("FORBIDDEN") if not superadmin."""
     payload = _require_jwt(req)
-    if payload.get("role") not in ("superadmin", "admin"):
+    if payload.get("role") != "superadmin":
         raise ValueError("FORBIDDEN")
     return payload
 
