@@ -4799,7 +4799,7 @@ def _run_full_pipeline_job(job_id: str, input_data: dict):
                         if d["id"] != _new_doc_id
                     ]
                     if _dupes:
-                        logger.info(
+                        logger.warning(
                             "Full pipeline job %s: found %d duplicate(s) for title %r — "
                             "deleting before write: %s",
                             job_id, len(_dupes), _new_title,

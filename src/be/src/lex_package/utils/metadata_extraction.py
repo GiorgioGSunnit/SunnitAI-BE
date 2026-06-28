@@ -20,18 +20,56 @@ _PAGES_TO_READ = 4
 _MAX_SAMPLE_CHARS = 8_000
 
 
+def _join_fragmented_lines(text: str) -> str:
+    """
+    Join short consecutive lines that are likely fragments of a single title
+    (e.g. book-style cover pages with large typography).
+
+    Lines shorter than 50 chars that are not separated by a blank line
+    are joined with a space. Blank lines preserve paragraph breaks.
+    """
+    import re as _re
+    result = []
+    buffer = []
+    for line in text.split("\n"):
+        stripped = line.strip()
+        if not stripped:
+            # Blank line — flush buffer as a paragraph
+            if buffer:
+                result.append(" ".join(buffer))
+                buffer = []
+            result.append("")
+        elif len(stripped) < 50:
+            # Short line — likely a title fragment, accumulate
+            buffer.append(stripped)
+        else:
+            # Long line — flush buffer first, then add this line as-is
+            if buffer:
+                result.append(" ".join(buffer))
+                buffer = []
+            result.append(stripped)
+    if buffer:
+        result.append(" ".join(buffer))
+    # Collapse multiple blank lines
+    joined = "\n".join(result)
+    return _re.sub(r"\n{3,}", "\n\n", joined).strip()
+
+
 def _read_first_pages(pdf_path: str | Path, n_pages: int = _PAGES_TO_READ) -> str:
     """Estrae il testo delle prime *n_pages* pagine del PDF con PyMuPDF.
 
     Restituisce stringa vuota in caso di errore (il PDF potrebbe non essere ancora
     su disco o non essere leggibile).
+    Applica _join_fragmented_lines per gestire copertine in stile libro con
+    tipografia grande che PyMuPDF estrae come righe frammentate.
     """
     try:
         import fitz  # PyMuPDF
 
         with fitz.open(str(pdf_path)) as doc:
             pages = min(n_pages, len(doc))
-            return "\n".join(doc[i].get_text() for i in range(pages)).strip()
+            raw = "\n".join(doc[i].get_text() for i in range(pages)).strip()
+            return _join_fragmented_lines(raw)
     except Exception as exc:
         logger.warning("metadata_extraction: impossibile leggere il PDF '%s': %s", pdf_path, exc)
         return ""
@@ -76,6 +114,10 @@ def extract_document_metadata(
             "estrai i metadati richiesti nello schema JSON fornito. "
             "Il titolo ufficiale del documento (document_name) deve essere estratto dal testo, "
             "NON dal nome del file: potrebbe differire significativamente. "
+            "Le copertine dei documenti legali italiani spesso hanno il titolo su più righe "
+            "con tipografia grande — assembla le righe del titolo in un'unica stringa pulita. "
+            "Esempio: 'Codice' + 'degli Appalti' → 'Codice degli Appalti'. "
+            "Includi anche l'anno di edizione se presente nel testo (es. 'Codice degli Appalti 2026'). "
             "Per editor_enterprises includi tutte le organizzazioni che hanno redatto, "
             "emesso o per cui è stato scritto il documento. "
             "Se un'informazione non è presente nel testo, lascia il campo null o lista vuota. "

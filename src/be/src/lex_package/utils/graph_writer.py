@@ -293,7 +293,7 @@ def find_document_by_name(name: str) -> list[dict]:
             # The corpus is typically < 10k documents so this is fast.
             result = session.run(
                 """
-                MATCH (d:LEGAL_DOC)
+                MATCH (d:Document)
                 WHERE d.name IS NOT NULL AND trim(d.name) <> ''
                 RETURN d.id AS id, d.name AS name, d.hash AS hash,
                        d.file_name AS file_name
@@ -341,7 +341,7 @@ def delete_document_by_id(doc_node_id: str) -> dict:
             # Delete all DOCUMENT_SECTION nodes for this doc + their relationships
             section_result = session.run(
                 """
-                MATCH (d:LEGAL_DOC {id: $doc_id})-[*1..3]-(s:DOCUMENT_SECTION)
+                MATCH (d:Document {id: $doc_id})-[:CONTAINS]->(s:Section)
                 DETACH DELETE s
                 RETURN count(s) AS deleted
                 """,
@@ -349,10 +349,10 @@ def delete_document_by_id(doc_node_id: str) -> dict:
             )
             sections_deleted = (section_result.single() or {}).get("deleted", 0)
 
-            # Delete the LEGAL_DOC node itself and its direct relationships
+            # Delete the Document node itself and its direct relationships
             doc_result = session.run(
                 """
-                MATCH (d:LEGAL_DOC {id: $doc_id})
+                MATCH (d:Document {id: $doc_id})
                 DETACH DELETE d
                 RETURN count(d) AS deleted
                 """,
@@ -360,8 +360,9 @@ def delete_document_by_id(doc_node_id: str) -> dict:
             )
             docs_deleted = (doc_result.single() or {}).get("deleted", 0)
 
-            logger.info(
-                "graph_writer: deleted LEGAL_DOC %s — %d sections, %d doc nodes",
+            # Use WARNING so it appears even when basicConfig is set to ERROR level
+            logger.warning(
+                "graph_writer: deleted document %s — %d sections, %d doc nodes",
                 doc_node_id, sections_deleted, docs_deleted,
             )
             return {"nodes": sections_deleted + docs_deleted, "relationships": 0}
