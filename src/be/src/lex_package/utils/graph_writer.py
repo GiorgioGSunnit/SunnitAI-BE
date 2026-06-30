@@ -338,27 +338,35 @@ def delete_document_by_id(doc_node_id: str) -> dict:
     database = os.environ.get("NEO4J_DATABASE", "neo4j")
     try:
         with driver.session(database=database) as session:
-            # Delete all DOCUMENT_SECTION nodes for this doc + their relationships
-            section_result = session.run(
-                """
-                MATCH (d:Document {id: $doc_id})-[:CONTAINS]->(s:Section)
-                DETACH DELETE s
-                RETURN count(s) AS deleted
-                """,
-                doc_id=doc_node_id,
-            )
-            sections_deleted = (section_result.single() or {}).get("deleted", 0)
+            # Run both deletes inside a single explicit transaction so a
+            # connection drop / timeout / interrupt between the two steps
+            # cannot leave sections orphaned (relationship gone, node intact,
+            # parent Document gone) — either both succeed together or neither
+            # commits, preventing the exact failure mode that orphaned 6,327
+            # sections across 6 deleted documents in production.
+            def _do_delete(tx):
+                section_result = tx.run(
+                    """
+                    MATCH (d:Document {id: $doc_id})-[:CONTAINS]->(s:Section)
+                    DETACH DELETE s
+                    RETURN count(s) AS deleted
+                    """,
+                    doc_id=doc_node_id,
+                )
+                sections_deleted = (section_result.single() or {}).get("deleted", 0)
 
-            # Delete the Document node itself and its direct relationships
-            doc_result = session.run(
-                """
-                MATCH (d:Document {id: $doc_id})
-                DETACH DELETE d
-                RETURN count(d) AS deleted
-                """,
-                doc_id=doc_node_id,
-            )
-            docs_deleted = (doc_result.single() or {}).get("deleted", 0)
+                doc_result = tx.run(
+                    """
+                    MATCH (d:Document {id: $doc_id})
+                    DETACH DELETE d
+                    RETURN count(d) AS deleted
+                    """,
+                    doc_id=doc_node_id,
+                )
+                docs_deleted = (doc_result.single() or {}).get("deleted", 0)
+                return sections_deleted, docs_deleted
+
+            sections_deleted, docs_deleted = session.execute_write(_do_delete)
 
             # Use WARNING so it appears even when basicConfig is set to ERROR level
             logger.warning(

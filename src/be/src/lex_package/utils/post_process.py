@@ -26,8 +26,18 @@ def _generate_section_abstract(
     section_name: str,
     existing_abstract: str,
     titolo_articolo: str = "",
+    base_article_text: str = "",
 ) -> str:
     """Generate a rich abstract using the LLM for short sections.
+
+    When base_article_text is provided (the parent article's own base
+    paragraph, distinct from this fragment's comma/sottocomma text), it is
+    used as mandatory grounding context: a fragment that is a narrow
+    sub-clause (e.g. an age-threshold exception) must still be described in
+    terms of the legal concept the parent article actually governs, not just
+    the sub-clause's literal narrow content. This prevents fragments from
+    drifting away from their article's real subject matter.
+
     Returns enriched abstract or existing one on any failure."""
     import os, requests
     llm_base = os.getenv("LLM_BASE_URL", "").rstrip("/")
@@ -35,6 +45,20 @@ def _generate_section_abstract(
         return existing_abstract
 
     title_hint = f"Titolo: {titolo_articolo}\n" if titolo_articolo else ""
+    base_hint = (
+        f"Testo base dell'articolo (per contesto, NON il frammento da descrivere): "
+        f"{base_article_text[:400]}\n"
+        if base_article_text and base_article_text[:300] != plain_text[:300]
+        else ""
+    )
+    grounding_note = (
+        "ATTENZIONE: questo frammento potrebbe essere un comma o sottocomma "
+        "specifico (es. un'eccezione, una circostanza aggravante, un limite "
+        "di età) e non l'intero articolo. Usa il testo base dell'articolo "
+        "sopra per capire il reato/istituto giuridico generale a cui questo "
+        "frammento appartiene, e includilo nell'abstract.\n"
+        if base_hint else ""
+    )
     prompt = (
         f"Sei un esperto di diritto italiano. "
         f"Genera un abstract conciso (max 100 parole) per questa "
@@ -45,6 +69,8 @@ def _generate_section_abstract(
         f"Rispondi SOLO con l'abstract, senza prefissi.\n\n"
         f"Articolo: {section_name}\n"
         f"{title_hint}"
+        f"{base_hint}"
+        f"{grounding_note}"
         f"Testo: {plain_text[:300]}"
     )
     try:
@@ -76,15 +102,30 @@ def _generate_section_title(
     section_name: str,
     titolo_articolo: str = "",
     existing_abstract: str = "",
+    base_article_text: str = "",
 ) -> str:
     """Generate a short title (3-8 words) describing what this
-    legal section is about. Returns empty string on any failure."""
+    legal section is about.
+
+    base_article_text, when provided, is the parent article's own base
+    paragraph — used to anchor the title to the article's actual legal
+    subject (e.g. 'Omicidio') even when this specific fragment only covers
+    a narrow sub-clause (e.g. an age-threshold exception), preventing
+    titles that accurately describe the fragment but mislabel the article.
+
+    Returns empty string on any failure."""
     import os, requests
     llm_base = os.getenv("LLM_BASE_URL", "").rstrip("/")
     if not llm_base:
         return ""
     title_hint = f"Titolo articolo (se noto): {titolo_articolo}\n" if titolo_articolo else ""
     abstract_hint = f"Contesto/abstract esistente: {existing_abstract[:300]}\n" if existing_abstract else ""
+    base_hint = (
+        f"Testo base dell'articolo (per contesto, NON il frammento da titolare): "
+        f"{base_article_text[:400]}\n"
+        if base_article_text and base_article_text[:300] != plain_text[:300]
+        else ""
+    )
     prompt = (
         f"Sei un esperto di diritto italiano. "
         f"Genera un titolo brevissimo (massimo 8 parole) che descriva "
@@ -92,15 +133,22 @@ def _generate_section_title(
         f"Il titolo deve essere il nome dell'istituto giuridico o reato "
         f"trattato (es. 'Resistenza a un pubblico ufficiale', 'Omicidio colposo'). "
         f"ATTENZIONE: il testo della sezione potrebbe essere un frammento "
-        f"incompleto (es. un rinvio a circostanze elencate altrove). In tal "
-        f"caso usa il contesto/abstract esistente, se fornito, per capire "
-        f"l'argomento reale; non inventare dettagli non presenti nel testo o "
-        f"nel contesto. "
+        f"incompleto di un articolo più ampio (es. un'eccezione, una "
+        f"circostanza aggravante, un limite di età, un rinvio a circostanze "
+        f"elencate altrove). Se è fornito il testo base dell'articolo, usalo "
+        f"per identificare il reato/istituto giuridico GENERALE a cui questo "
+        f"frammento appartiene, e usa quello come titolo principale — non "
+        f"titolare il frammento isolatamente con un dettaglio troppo specifico "
+        f"(es. preferisci 'Omicidio' a 'Omicidio per chi ha meno di 21 anni' "
+        f"se il frammento è solo un'eccezione di età all'interno dell'articolo "
+        f"sull'omicidio). Non inventare dettagli non presenti nel testo o nel "
+        f"contesto. "
         f"Rispondi SOLO con il titolo, senza virgolette, senza punteggiatura finale, "
         f"senza prefissi come 'Titolo:'.\n\n"
         f"Articolo: {section_name}\n"
         f"{title_hint}"
         f"{abstract_hint}"
+        f"{base_hint}"
         f"Testo: {plain_text[:300]}"
     )
     try:
@@ -320,6 +368,58 @@ def _step2b_fix_section_properties(session, document_hash: str) -> str:
             document_hash=document_hash,
         )
 
+        # Fetch base-article text once per document: a map of
+        # {article_number: plain_text} for every Section whose name has no
+        # "." or "_" suffix (i.e. the Articolo-level row, not a
+        # comma/sottocomma fragment). Used to ground title/abstract
+        # generation for fragments so they stay anchored to the article's
+        # actual legal subject rather than drifting to a narrow sub-clause.
+        # Base article text is the article's own main paragraph — used to
+        # ground fragment titles/abstracts. A "base" node is either:
+        #   (a) the bare article number itself (e.g. "640"), or
+        #   (b) a single ".0.0"-suffixed node when no other variant of that
+        #       article exists (e.g. "21.0.0" — simple articles with no real
+        #       comma/sottocomma structure are still named with this suffix
+        #       by the flatten step, even though they ARE the complete article).
+        # NOTE: this is a heuristic, not a guarantee of completeness — a small
+        # number of articles may have only a narrow fragment surviving under
+        # ".0.0" rather than the true main paragraph (known ingestion gap,
+        # tracked separately, not fixable from post-processing alone).
+        all_section_rows = session.run(
+            """
+            MATCH (d:Document)-[:CONTAINS]->(s:Section)
+            WHERE d.hash = $document_hash
+              AND s.name IS NOT NULL AND s.plain_text IS NOT NULL AND s.plain_text <> ""
+            RETURN s.name AS name, s.plain_text AS plain_text
+            """,
+            document_hash=document_hash,
+        ).data()
+        _base_re = re.compile(
+            r'^(\d+(?:-(?:bis|ter|quater|quinquies|sexies|septies|octies|novies|decies))?)'
+        )
+        _by_base: dict[str, list[tuple[str, str]]] = {}
+        for r in all_section_rows:
+            m = _base_re.match(r["name"])
+            if not m:
+                continue
+            _by_base.setdefault(m.group(1), []).append((r["name"], r["plain_text"]))
+
+        base_article_text_map: dict[str, str] = {}
+        for base, variants in _by_base.items():
+            names = {n for n, _ in variants}
+            if base in names:
+                base_article_text_map[base] = next(t for n, t in variants if n == base)
+            elif len(variants) == 1 and variants[0][0] == f"{base}.0.0":
+                base_article_text_map[base] = variants[0][1]
+            # else: genuinely fragmented with no single clean node — leave
+            # ungrounded rather than guessing which fragment is the "real" one.
+
+        def _base_article_number(section_name: str) -> str:
+            """Extract the base article number from a section name,
+            e.g. '640.2_3' -> '640', '575.0.0' -> '575', '50-bis.4_2' -> '50-bis'."""
+            m = re.match(r'^(\d+(?:-(?:bis|ter|quater|quinquies|sexies|septies|octies|novies|decies))?)', section_name)
+            return m.group(1) if m else ""
+
         # Clean plain_text — strip short header/navigation lines in Python
         rows = session.run(
             """
@@ -354,8 +454,11 @@ def _step2b_fix_section_properties(session, document_hash: str) -> str:
             if len(cleaned.strip()) < 150:
                 titolo = row.get("titolo_articolo", "") or ""
                 current_abstract = row.get("abstract", "") or ""
+                _base_num = _base_article_number(row.get("name", "") or "")
+                _base_text = base_article_text_map.get(_base_num, "")
                 enriched = _generate_section_abstract(
-                    cleaned, row.get("name", "") or "", current_abstract, titolo
+                    cleaned, row.get("name", "") or "", current_abstract, titolo,
+                    base_article_text=_base_text,
                 )
                 if enriched and enriched != current_abstract:
                     session.run(
@@ -370,9 +473,12 @@ def _step2b_fix_section_properties(session, document_hash: str) -> str:
             existing_title_match = re.match(r"^-\s*(.+?)\s*-", current_abstract_for_title)
             if not existing_title_match:
                 titolo = row.get("titolo_articolo", "") or ""
+                _base_num = _base_article_number(row.get("name", "") or "")
+                _base_text = base_article_text_map.get(_base_num, "")
                 generated_title = _generate_section_title(
                     cleaned, row.get("name", "") or "", titolo,
                     existing_abstract=current_abstract_for_title,
+                    base_article_text=_base_text,
                 )
                 if generated_title:
                     session.run(
