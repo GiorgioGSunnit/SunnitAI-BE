@@ -358,7 +358,17 @@ def build_neo4j_graph_payload(
             words = re.sub(r'[^\w\s]', '', text).split()
             return "_".join(w.lower() for w in words[:max_words] if len(w) > 2 or w.isdigit())
 
-        if art and art.isdigit() and int(art) <= 20:
+        # Only apply low-number prefix logic for non-legal-code documents
+        # (banking circulars, internal policies etc where "1", "2" are
+        # chapter numbers, not article numbers). For Italian legal codes
+        # and statutes, low article numbers are real and must not be
+        # prefixed — doing so makes them invisible to article lookup.
+        _is_legal_code = bool(re.search(
+            r'\b(codice|legge|decreto|testo\s+unico|d\.lgs|d\.p\.r|l\.\s*\d|'
+            r'regolamento\s+(?:UE|CE|generale)|direttiva|convenzione)\b',
+            document_name, re.IGNORECASE,
+        ))
+        if art and art.isdigit() and int(art) <= 20 and not _is_legal_code:
             # Build prefix from most specific available hierarchy level
             prefix = ""
             if _capitolo and not re.match(r'^\d+$', _capitolo):

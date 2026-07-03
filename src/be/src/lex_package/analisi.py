@@ -27,8 +27,12 @@ async def consolida_analisi(testocontenuto):
             UnaLegge = True
 
     for i,x in enumerate(testocontenuto):
-        if UnaLegge and (str(x.get("identificativo", "")).isdigit()):
-            # print("#########  SALTO!  #########")
+        if UnaLegge and (str(x.get("identificativo", "")).isdigit()) and not x.get("contenuto_parsato"):
+            # Only skip bare-digit entries that have no contenuto_parsato —
+            # those are genuine sub-structure items (commi numbered "1","2")
+            # leaking into the top-level list. Real articles always have
+            # contenuto_parsato populated, even when their identificativo
+            # has been normalized to a bare number upstream.
             continue
         else:
             TitoloProvvisorio = x.get("titolo", "")

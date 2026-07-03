@@ -273,14 +273,19 @@ async def analisi_parallel(
 
     print("     - Analisi_parallel 🥔🥔🥔", total_commas, f"({total_chunks} chunks)")
 
+    # Short chunks (< 30 chars): skip LLM analysis but keep them in the
+    # pipeline so short/abrogated articles still get written to the graph.
+    # They pass through with raw content intact via _short_chunk_indices.
     _pre_filter = len(flat_inputs)
-    _keep = [i for i, c in enumerate(flat_chunk_contents) if len(c.strip()) >= 30]
+    _keep  = [i for i, c in enumerate(flat_chunk_contents) if len(c.strip()) >= 30]
+    _short = [i for i, c in enumerate(flat_chunk_contents) if len(c.strip()) < 30]
     _skipped = _pre_filter - len(_keep)
     if _skipped:
         logger.info(
-            "Skipping %d/%d trivial chunks (< 30 chars) before LLM; sending %d",
+            "Bypassing LLM for %d/%d short chunks (< 30 chars); sending %d to LLM",
             _skipped, _pre_filter, len(_keep),
         )
+    _short_chunk_indices = set(_short)
     flat_inputs   = [flat_inputs[i]   for i in _keep]
     comma_indices = [comma_indices[i] for i in _keep]
     total_chunks  = len(flat_inputs)
@@ -428,6 +433,11 @@ async def analisi_parallel(
                     if not content_ok_for_llm(
                         sc_content, sc.get("identificativo"), MIN_CONTENT_LEN
                     ):
+                        if sc_content:
+                            sc.setdefault("core_text", sc_content)
+                            sc.setdefault("search_text", sc_content)
+                            emb_text = f"{a.get('titolo','')}\n{sc_content}"
+                            sc["embedding"] = embed_text(emb_text)
                         continue
                     sc.update(dicts[counter])
                     emb_text = f"{a.get('titolo','')}\n{(sc.get('core_text') or sc.get('contenuto') or '').strip()}"
@@ -447,7 +457,23 @@ async def analisi_parallel(
             if not c.get("contenuto_parsato_2", ""):
                 content = c.get("contenuto", "").strip()
                 if len(content) < MIN_CONTENT_LEN:
-                    continue  # skip same empty items as in building phase
+                    if content:
+                        # Non-empty but short — write through with raw content.
+                        # Do NOT consume dicts[counter]: no LLM entry was built
+                        # for this comma in the building phase, so consuming
+                        # dicts[counter] here would corrupt all subsequent mappings.
+                        nuovo = {
+                            "contenuto": c.get("contenuto", ""),
+                            "identificativo": "0",
+                            "flag": c.get("flag", ""),
+                            "riempito": True,
+                            "core_text": content,
+                            "search_text": content,
+                        }
+                        emb_text = f"{a.get('titolo','')}\n{content}"
+                        nuovo["embedding"] = embed_text(emb_text)
+                        c["contenuto_parsato_2"] = [nuovo]
+                    continue
                 nuovo = {
                     "contenuto": c.get("contenuto", ""),
                     "identificativo": "0",

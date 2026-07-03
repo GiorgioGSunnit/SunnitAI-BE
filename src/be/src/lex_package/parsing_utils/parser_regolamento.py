@@ -27,7 +27,7 @@ ARTICLE_PATTERN = re.compile(
     r"novies|decies|undecies|duodecies|terdecies|quattuordecies|quindecies|"
     r"sexdecies|septendecies|octodecies|novendecies|vicies|unvicies|"
     r"duovicies|tervicies|quattuorvicies|quinvicies|sexvicies|septenvicies|"
-    r"octovicies|novenvicies|tricies))?\.?(?:\s+.+)?\s*$",
+    r"octovicies|novenvicies|tricies))?\.?(?:\s*.+)?\s*$",
     re.IGNORECASE,
 )
 ARTICLE_CODE_PATTERN = re.compile(
@@ -121,11 +121,13 @@ def validate_article_sequence(
         is_valid = True  # any forward progression is valid
     elif (
         previous_number == numero
+        and previous_extension is not None
         and previous_extension + 1 == current_cardinality
     ):
         is_valid = True
     elif (
         previous_number == numero
+        and previous_extension is not None
         and previous_extension + 2 == current_cardinality
     ):
         is_valid = True
@@ -337,7 +339,7 @@ class RegulationParser:
 
                 if sequence.is_valid:
                     inline_title_match = re.search(
-                        r'^(?:ART\.|Articolo)\s+\d+(?:[-\s]*\w+)?\.?\s+(.+)$',
+                        r'^(?:ART\.|Articolo)\s+\d+(?:[-\s]*\w+)?\.?\s*(.+)$',
                         line, re.IGNORECASE,
                     )
                     title_line = (
@@ -355,7 +357,11 @@ class RegulationParser:
                         title_line=title_line,
                         article_code=codicearticolo,
                     )
-                    title_pending = True
+                    # Only skip the next line when the title was NOT inline
+                    # (i.e. the next line IS the title). When the title was
+                    # found inline, the next line is real content and must
+                    # not be skipped.
+                    title_pending = inline_title_match is None
                 else:
                     collector.add_content(line)
             elif len(line) > self.max_heading_length:

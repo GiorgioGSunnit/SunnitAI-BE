@@ -46,13 +46,19 @@ def extract_page_text(
         kwargs = {"clip": clip} if clip else {}
         blocks = page.get_text("blocks", **kwargs)
         if blocks:
-            page_width = max(b[2] for b in blocks) if blocks else 0
+            # Use actual page width, not max block x2 (which underestimates
+            # and shifts the midpoint, breaking two-column detection)
+            page_width = page.rect.width if page.rect.width > 0 else (
+                max(b[2] for b in blocks) if blocks else 0
+            )
             if page_width > 0:
                 page_mid = page_width / 2
                 left = [b for b in blocks if (b[0] + b[2]) / 2 < page_mid]
                 right = [b for b in blocks if (b[0] + b[2]) / 2 >= page_mid]
+                # Lower floor threshold from 0.25 to 0.20 — a page with
+                # 5 left and 16 right blocks (ratio=0.24) is still two-column
                 if (len(left) >= 3 and len(right) >= 3 and
-                        0.25 <= len(left) / len(blocks) <= 0.75):
+                        0.20 <= len(left) / len(blocks) <= 0.80):
                     left_sorted = sorted(left, key=lambda b: (round(b[1] / 10) * 10, b[0]))
                     right_sorted = sorted(right, key=lambda b: (round(b[1] / 10) * 10, b[0]))
                     blocks = left_sorted + right_sorted
