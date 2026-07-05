@@ -4815,7 +4815,29 @@ def _run_full_pipeline_job(job_id: str, input_data: dict):
             nodes_written, rels_written = 0, 0
             if is_configured():
                 t = time.perf_counter()
-                nodes_written, rels_written = write_graph_payload(payload)
+                _max_attempts = 4
+                _backoff = 10  # seconds
+                for _attempt in range(1, _max_attempts + 1):
+                    try:
+                        nodes_written, rels_written = write_graph_payload(payload)
+                        break
+                    except Exception as _write_exc:
+                        _exc_str = str(_write_exc)
+                        _transient = any(k in _exc_str for k in (
+                            "DatabaseUnavailable", "TransientError",
+                            "transaction has been terminated",
+                            "Retry your operation",
+                        ))
+                        if _transient and _attempt < _max_attempts:
+                            logger.warning(
+                                "Full pipeline job %s: Neo4j transient error on write attempt %d/%d — "
+                                "retrying in %ds: %s",
+                                job_id, _attempt, _max_attempts, _backoff, _exc_str[:120],
+                            )
+                            time.sleep(_backoff)
+                            _backoff *= 2
+                        else:
+                            raise
                 logger.info(
                     "Full pipeline job %s: step 4 (Neo4J write) done in %.1fs — %d nodes, %d rels",
                     job_id, time.perf_counter() - t, nodes_written, rels_written,
