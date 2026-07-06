@@ -139,8 +139,21 @@ def ingest_one(pdf_path: Path) -> bool:
         return False
 
 
+_LOCK_TIMEOUT_SECONDS = 3600  # 1 hour — any lock older than this is stale
+
+def _clear_stale_locks() -> None:
+    """Remove lock files from crashed/killed previous runs."""
+    import time
+    for lock in UPLOAD_DIR.glob("*.lock"):
+        age = time.time() - lock.stat().st_mtime
+        if age > _LOCK_TIMEOUT_SECONDS:
+            logger.warning("Removing stale lock (%.0fs old): %s", age, lock.name)
+            lock.unlink(missing_ok=True)
+
+
 def process_directory() -> int:
     """Process all PDFs in UPLOAD_DIR. Returns count of successes."""
+    _clear_stale_locks()
     pdfs = sorted(UPLOAD_DIR.glob("*.pdf"))
     if not pdfs:
         return 0
@@ -151,9 +164,11 @@ def process_directory() -> int:
     for pdf_path in pdfs:
         lock = pdf_path.with_suffix(".lock")
         if lock.exists():
-            logger.info("SKIP (locked): %s", pdf_path.name)
+            age = time.time() - lock.stat().st_mtime
+            logger.info("SKIP (locked, %.0fs old): %s", age, pdf_path.name)
             continue
 
+        # Claim the file
         lock.touch()
         try:
             success = ingest_one(pdf_path)

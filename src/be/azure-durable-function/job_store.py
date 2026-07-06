@@ -12,6 +12,34 @@ from datetime import datetime, timezone
 _jobs: dict[str, dict] = {}
 _lock = threading.Lock()
 
+_JOB_DIR = "/tmp/sunnitai_jobs"
+
+def _job_path(job_id: str) -> str:
+    import os
+    os.makedirs(_JOB_DIR, exist_ok=True)
+    return f"{_JOB_DIR}/{job_id}.json"
+
+def _persist_job(job: dict) -> None:
+    """Write job to disk so it survives service restarts."""
+    try:
+        import os, json
+        path = _job_path(job["id"])
+        tmp = path + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(job, f)
+        os.replace(tmp, path)
+    except Exception:
+        pass
+
+def _load_job_from_disk(job_id: str) -> dict | None:
+    """Load job from disk if not in memory."""
+    try:
+        import json
+        with open(_job_path(job_id)) as f:
+            return json.load(f)
+    except Exception:
+        return None
+
 # ── Active-job counters (in-memory, single-process) ───────────────────────────
 # Tracks how many jobs of each type are currently Pending or Running.
 # Used to compute queue_position at submission time.
@@ -138,7 +166,11 @@ def update_job(
         return _write_job_to_blob(job)
     with _lock:
         if job_id not in _jobs:
-            return False
+            # Try loading from disk before giving up
+            j = _load_job_from_disk(job_id)
+            if j is None:
+                return False
+            _jobs[job_id] = j
         j = _jobs[job_id]
         if status is not None:
             j["status"] = status
@@ -150,6 +182,7 @@ def update_job(
             j["error"] = error
         if custom_status is not None:
             j["custom_status"] = custom_status
+        _persist_job(j)
         return True
 
 
@@ -158,7 +191,13 @@ def get_job(job_id: str) -> dict | None:
     if bsc and bsc.is_available():
         return _read_job_from_blob(job_id)
     with _lock:
-        return _jobs.get(job_id)
+        job = _jobs.get(job_id)
+    if job is None:
+        job = _load_job_from_disk(job_id)
+        if job:
+            with _lock:
+                _jobs[job_id] = job
+    return job
 
 
 def set_completed(job_id: str, result: dict):
