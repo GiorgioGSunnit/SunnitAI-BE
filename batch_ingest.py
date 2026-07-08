@@ -130,6 +130,12 @@ def ingest_one(pdf_path: Path) -> bool:
                 else:
                     raise
 
+        # 5. Post-processing (relabel — fast steps only)
+        from lex_package.utils.post_process import post_process_fast_steps
+        t = time.perf_counter()
+        pp_result = post_process_fast_steps(doc_hash)
+        logger.info("  [5/5] post-processing done %.1fs — %s", time.perf_counter() - t, pp_result)
+
         elapsed = time.perf_counter() - t_start
         logger.info("DONE ✓ '%s' in %.1fs", doc_name, elapsed)
         return True
