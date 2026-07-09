@@ -299,7 +299,7 @@ async def analisi_parallel(
         llm          = _get_structured_llm()
         llm_fallback = _get_structured_llm_fallback()
 
-        semaphore = _asyncio.Semaphore(25)  # max 25 concurrent RunPod calls
+        semaphore = _asyncio.Semaphore(5)  # max 5 concurrent RunPod calls
         call_times: list[float] = []
 
         async def _invoke_with_fallback(inp, i, llm, llm_fallback) -> Analisi_Paragrafo:
