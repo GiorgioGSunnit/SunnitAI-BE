@@ -14,6 +14,7 @@ from .parsing_utils.parser_annex_tabular import parser_annex_tabular
 from .parsing_utils.parser_general import parser_general, parts_to_articoli
 from .parsing_utils.parser_fallback_chunks import parser_fallback_chunks
 from .parsing_utils.parser_generic import parser_generic
+from .parsing_utils.parser_special_chunks import parser_special_chunks
 from .parsing_utils.document_profiler import profile_document
 from .parsing_utils.document_part import DocumentPart
 
@@ -158,6 +159,11 @@ def parse(
             When provided, template scoring is skipped and the named parser
             is used directly (if the hint matches a known template).
     """
+    # ── Phase 0: "[SPECIAL]"-prefixed docs bypass all structural parsers ──
+    if isinstance(pdf_name, str) and pdf_name.strip().upper().startswith("[SPECIAL]"):
+        print(f"[INFO] '[SPECIAL]' prefix detected on '{pdf_name}' — using parser_special_chunks")
+        return parser_special_chunks(str(pdf_path))
+
     # ── Phase 1: Profile ──────────────────────────────────────────────────
     profile = profile_document(pdf_path, pdf_name, template_hint=template_hint)
     parser_type = profile.detected_type

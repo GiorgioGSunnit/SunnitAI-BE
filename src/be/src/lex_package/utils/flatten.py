@@ -277,6 +277,15 @@ def build_neo4j_graph_payload(
 
     doc_date = _extract_first_date(document_name)
     source_name, source_desc = _infer_legal_source(document_name)
+    is_special = document_name.strip().upper().startswith("[SPECIAL]")
+
+    normalized_doc_name = document_name.strip().lstrip("﻿").strip()
+    if is_special:
+        document_type = "special"
+    elif normalized_doc_name.upper().startswith("[PENALE]") or normalized_doc_name.upper().startswith("[CIVILE]"):
+        document_type = "interpretation"
+    else:
+        document_type = "primary"
 
     add_node(
         doc_node_id,
@@ -290,6 +299,7 @@ def build_neo4j_graph_payload(
             "document_number": extracted_metadata.document_number if extracted_metadata else None,
             "status": "",
             "hash": document_hash,
+            "document_type": document_type,
         },
     )
 

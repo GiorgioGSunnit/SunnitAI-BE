@@ -67,6 +67,223 @@ def ingest_one(pdf_path: Path) -> bool:
         file_content = pdf_path.read_bytes()
         doc_hash = hashlib.sha256(file_content).hexdigest()
 
+        # ── [SPECIAL] fast path: raw chunks straight to the graph, no LLM ──────
+        if doc_name.strip().lstrip('﻿').upper().startswith("[SPECIAL]"):
+            logger.info("  [SPECIAL] fast path — skipping analisi_parallel/flatten")
+            from lex_package.parse import parse
+            from lex_package.utils.graph_writer import (
+                write_graph_payload,
+                find_document_by_name, delete_document_by_id,
+            )
+            from lex_package.utils.post_process import post_process_embeddings
+
+            # 1. Parse
+            t = time.perf_counter()
+            articoli = parse(str(pdf_path), doc_name)
+            logger.info("  [1/3] parse done %.1fs — %d chunk(s)", time.perf_counter() - t, len(articoli))
+
+            # 2. Build minimal graph payload directly from articoli
+            t = time.perf_counter()
+            doc_node_id = f"LEGAL_DOC::{doc_hash}"
+            nodes = [{
+                "id": doc_node_id,
+                "labels": ["LEGAL_DOC", "Document"],
+                "properties": {
+                    "id": doc_node_id,
+                    "name": doc_name,
+                    "file_name": file_name,
+                    "hash": doc_hash,
+                    "document_type": "special",
+                },
+            }]
+            relationships = []
+            for i, articolo in enumerate(articoli):
+                section_id = f"DOCUMENT_SECTION::{doc_hash}::{i}"
+                section_name = (articolo.get("titolo") or "")[:80] or f"{doc_hash[:8]}::{i}"
+                nodes.append({
+                    "id": section_id,
+                    "labels": ["Section"],
+                    "properties": {
+                        "id": section_id,
+                        "name": section_name,
+                        "plain_text": articolo.get("contenuto") or "",
+                        "abstract": (articolo.get("titolo") or "")[:200],
+                        "type": "special_chunk",
+                    },
+                })
+                relationships.append({
+                    "type": "CONTAINS",
+                    "source": doc_node_id,
+                    "target": section_id,
+                })
+            payload = {"nodes": nodes, "relationships": relationships}
+            logger.info("  [2/3] built graph payload %.1fs — %d section(s)", time.perf_counter() - t, len(articoli))
+
+            # 2b. Deduplication
+            dupes = [d for d in find_document_by_name(doc_name) if d["id"] != doc_node_id]
+            if dupes:
+                logger.info("  dedup: removing %d existing copy/copies", len(dupes))
+                for d in dupes:
+                    delete_document_by_id(d["id"])
+
+            # 3. Write with retry
+            t = time.perf_counter()
+            max_attempts, backoff = 4, 10
+            for attempt in range(1, max_attempts + 1):
+                try:
+                    nodes_written, rels_written = write_graph_payload(payload)
+                    logger.info(
+                        "  [3/3] write done %.1fs — %d nodes, %d rels",
+                        time.perf_counter() - t, nodes_written, rels_written,
+                    )
+                    break
+                except Exception as exc:
+                    transient = any(k in str(exc) for k in (
+                        "DatabaseUnavailable", "TransientError",
+                        "transaction has been terminated", "Retry your operation",
+                    ))
+                    if transient and attempt < max_attempts:
+                        logger.warning("  Neo4j transient error, retry %d/%d in %ds", attempt, max_attempts, backoff)
+                        time.sleep(backoff)
+                        backoff *= 2
+                    else:
+                        raise
+
+            # 4. Post-processing (embeddings)
+            t = time.perf_counter()
+            pp_result = post_process_embeddings(doc_hash)
+            logger.info("  post-processing embeddings done %.1fs — %s", time.perf_counter() - t, pp_result)
+
+            elapsed = time.perf_counter() - t_start
+            logger.info("DONE ✓ '%s' in %.1fs [SPECIAL fast path]", doc_name, elapsed)
+            return True
+
+        elif doc_name.strip().lstrip('﻿').upper().startswith("[CCNL]"):
+            logger.info("  [CCNL] fast path — skipping analisi_parallel/flatten")
+            import re
+            from lex_package.parse import parse
+            from lex_package.utils.graph_writer import (
+                write_graph_payload,
+                find_document_by_name, delete_document_by_id,
+            )
+            from lex_package.utils.post_process import post_process_embeddings
+
+            # 1. Parse
+            t = time.perf_counter()
+            articoli = parse(str(pdf_path), doc_name)
+            logger.info("  [1/3] parse done %.1fs — %d chunk(s)", time.perf_counter() - t, len(articoli))
+
+            # 1b. Extract metadata from doc_name: "[CCNL] {sector} — {subtype} del {date}"
+            _name_body = re.sub(r'^\[CCNL\]\s*', '', doc_name.strip().lstrip('﻿'), flags=re.IGNORECASE)
+            if " — " in _name_body:
+                sector, _rest = _name_body.split(" — ", 1)
+            else:
+                sector, _rest = _name_body, ""
+            sector = sector.strip()
+            if " del " in _rest:
+                document_subtype, date_str = _rest.split(" del ", 1)
+            else:
+                document_subtype, date_str = _rest, ""
+            document_subtype = document_subtype.strip()
+            date_str = date_str.strip()
+            macro_category = ""
+
+            def _normalize_date(raw: str):
+                m = re.match(r'^(\d{2})[./](\d{2})[./](\d{4})$', (raw or "").strip())
+                if not m:
+                    return None
+                dd, mm, yyyy = m.groups()
+                return f"{yyyy}-{mm}-{dd}"
+
+            # 1c. Extract valid_from/valid_until from document content
+            content_blob = "".join(a.get("contenuto") or "" for a in articoli)[:3000]
+            _decorrenza = re.search(r'Decorrenza[:\s]+(\d{2}[./]\d{2}[./]\d{4})', content_blob)
+            _scadenza = re.search(r'Scadenza[:\s]+(\d{2}[./]\d{2}[./]\d{4})', content_blob)
+            valid_from = _normalize_date(_decorrenza.group(1)) if _decorrenza else _normalize_date(date_str)
+            valid_until = _normalize_date(_scadenza.group(1)) if _scadenza else None
+
+            # 2. Build minimal graph payload directly from articoli
+            t = time.perf_counter()
+            doc_node_id = f"LEGAL_DOC::{doc_hash}"
+            nodes = [{
+                "id": doc_node_id,
+                "labels": ["LEGAL_DOC", "Document"],
+                "properties": {
+                    "id": doc_node_id,
+                    "name": doc_name,
+                    "file_name": file_name,
+                    "hash": doc_hash,
+                    "document_type": "ccnl",
+                    "sector": sector,
+                    "document_subtype": document_subtype,
+                    "macro_category": macro_category,
+                    "valid_from": valid_from,
+                    "valid_until": valid_until,
+                    "is_ccnl": True,
+                },
+            }]
+            relationships = []
+            for i, articolo in enumerate(articoli):
+                section_id = f"DOCUMENT_SECTION::{doc_hash}::{i}"
+                section_name = (articolo.get("titolo") or "")[:80] or f"{doc_hash[:8]}::{i}"
+                nodes.append({
+                    "id": section_id,
+                    "labels": ["Section"],
+                    "properties": {
+                        "id": section_id,
+                        "name": section_name,
+                        "plain_text": articolo.get("contenuto") or "",
+                        "abstract": (articolo.get("titolo") or "")[:200],
+                        "type": "ccnl_chunk",
+                    },
+                })
+                relationships.append({
+                    "type": "CONTAINS",
+                    "source": doc_node_id,
+                    "target": section_id,
+                })
+            payload = {"nodes": nodes, "relationships": relationships}
+            logger.info("  [2/3] built graph payload %.1fs — %d section(s)", time.perf_counter() - t, len(articoli))
+
+            # 2b. Deduplication
+            dupes = [d for d in find_document_by_name(doc_name) if d["id"] != doc_node_id]
+            if dupes:
+                logger.info("  dedup: removing %d existing copy/copies", len(dupes))
+                for d in dupes:
+                    delete_document_by_id(d["id"])
+
+            # 3. Write with retry
+            t = time.perf_counter()
+            max_attempts, backoff = 4, 10
+            for attempt in range(1, max_attempts + 1):
+                try:
+                    nodes_written, rels_written = write_graph_payload(payload)
+                    logger.info(
+                        "  [3/3] write done %.1fs — %d nodes, %d rels",
+                        time.perf_counter() - t, nodes_written, rels_written,
+                    )
+                    break
+                except Exception as exc:
+                    transient = any(k in str(exc) for k in (
+                        "DatabaseUnavailable", "TransientError",
+                        "transaction has been terminated", "Retry your operation",
+                    ))
+                    if transient and attempt < max_attempts:
+                        logger.warning("  Neo4j transient error, retry %d/%d in %ds", attempt, max_attempts, backoff)
+                        time.sleep(backoff)
+                        backoff *= 2
+                    else:
+                        raise
+
+            # 4. Post-processing (embeddings)
+            t = time.perf_counter()
+            pp_result = post_process_embeddings(doc_hash)
+            logger.info("  post-processing embeddings done %.1fs — %s", time.perf_counter() - t, pp_result)
+
+            elapsed = time.perf_counter() - t_start
+            logger.info("DONE ✓ '%s' in %.1fs [CCNL fast path]", doc_name, elapsed)
+            return True
+
         # 1. Parse + LLM
         logger.info("  [1/4] parse + LLM analysis")
         from lex_package.analisi import analisi, consolida_analisi
