@@ -189,16 +189,42 @@ def ingest_one(pdf_path: Path) -> bool:
             macro_category = ""
 
             def _normalize_date(raw: str):
-                m = re.match(r'^(\d{2})[./](\d{2})[./](\d{4})$', (raw or "").strip())
-                if not m:
-                    return None
-                dd, mm, yyyy = m.groups()
-                return f"{yyyy}-{mm}-{dd}"
+                raw = (raw or "").strip()
+                # DD/MM/YYYY or DD.MM.YYYY
+                m = re.match(r'^(\d{2})[./](\d{2})[./](\d{4})$', raw)
+                if m:
+                    dd, mm, yyyy = m.groups()
+                    return f"{yyyy}-{mm}-{dd}"
+                # DDMMYYYY (no separators — from filenames)
+                m = re.match(r'^(\d{2})(\d{2})(\d{4})$', raw)
+                if m:
+                    dd, mm, yyyy = m.groups()
+                    return f"{yyyy}-{mm}-{dd}"
+                return None
 
             # 1c. Extract valid_from/valid_until from document content
-            content_blob = "".join(a.get("contenuto") or "" for a in articoli)[:3000]
-            _decorrenza = re.search(r'Decorrenza[:\s]+(\d{2}[./]\d{2}[./]\d{4})', content_blob)
-            _scadenza = re.search(r'Scadenza[:\s]+(\d{2}[./]\d{2}[./]\d{4})', content_blob)
+            try:
+                import pypdf
+                _pdf_reader = pypdf.PdfReader(str(pdf_path))
+                _raw_pages = " ".join(
+                    _pdf_reader.pages[i].extract_text() or ""
+                    for i in range(min(2, len(_pdf_reader.pages)))
+                )
+                content_blob = _raw_pages + " " + "".join(a.get("contenuto") or "" for a in articoli)[:2000]
+            except Exception:
+                content_blob = "".join(a.get("contenuto") or "" for a in articoli)[:3000]
+            # Decorrenza — take plain "Decorrenza:" first, fallback to any variant
+            _decorrenza = (
+                re.search(r'Decorrenza\s*:\s*(\d{2}[./]\d{2}[./]\d{4})', content_blob, re.IGNORECASE)
+                or re.search(r'Decorrenza[^:\n]*:\s*(\d{2}[./]\d{2}[./]\d{4})', content_blob, re.IGNORECASE)
+            )
+
+            # Scadenza — prefer "normativa" as it's the latest binding date, fallback to any variant
+            _scadenza = (
+                re.search(r'Scadenza\s+normativa\s*:\s*(\d{2}[./]\d{2}[./]\d{4})', content_blob, re.IGNORECASE)
+                or re.search(r'Scadenza\s*:\s*(\d{2}[./]\d{2}[./]\d{4})', content_blob, re.IGNORECASE)
+                or re.search(r'Scadenza[^:\n]*:\s*(\d{2}[./]\d{2}[./]\d{4})', content_blob, re.IGNORECASE)
+            )
             valid_from = _normalize_date(_decorrenza.group(1)) if _decorrenza else _normalize_date(date_str)
             valid_until = _normalize_date(_scadenza.group(1)) if _scadenza else None
 
@@ -367,7 +393,7 @@ _LOCK_TIMEOUT_SECONDS = 3600  # 1 hour — any lock older than this is stale
 def _clear_stale_locks() -> None:
     """Remove lock files from crashed/killed previous runs."""
     import time
-    for lock in UPLOAD_DIR.glob("*.lock"):
+    for lock in UPLOAD_DIR.rglob("*.lock"):
         age = time.time() - lock.stat().st_mtime
         if age > _LOCK_TIMEOUT_SECONDS:
             logger.warning("Removing stale lock (%.0fs old): %s", age, lock.name)
@@ -377,7 +403,7 @@ def _clear_stale_locks() -> None:
 def process_directory() -> int:
     """Process all PDFs in UPLOAD_DIR. Returns count of successes."""
     _clear_stale_locks()
-    pdfs = sorted(UPLOAD_DIR.glob("*.pdf"))
+    pdfs = sorted(UPLOAD_DIR.rglob("*.pdf"))
     if not pdfs:
         return 0
 
