@@ -148,6 +148,11 @@ def build_embedding_model(
     kwargs: Dict[str, Any] = {
         "model": embedding_model,
         "api_key": api_key,
+        # Disable LangChain's tiktoken pre-tokenization. Without this flag,
+        # LangChain encodes text with cl100k_base and sends token ID lists to
+        # the server. Qwen reads those IDs with its own vocabulary, producing
+        # scrambled input. Setting this to False sends raw UTF-8 strings.
+        "check_embedding_ctx_length": False,
     }
     if base_url:
         kwargs["base_url"] = base_url

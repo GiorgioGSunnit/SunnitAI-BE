@@ -374,10 +374,15 @@ def ingest_one(pdf_path: Path) -> bool:
                     raise
 
         # 5. Post-processing (relabel — fast steps only)
-        from lex_package.utils.post_process import post_process_fast_steps
+        from lex_package.utils.post_process import post_process_fast_steps, post_process_embeddings
         t = time.perf_counter()
         pp_result = post_process_fast_steps(doc_hash)
         logger.info("  [5/5] post-processing done %.1fs — %s", time.perf_counter() - t, pp_result)
+
+        # 6. Generate embeddings (plain-text, dual-write embedding + embedding_v2)
+        t = time.perf_counter()
+        emb_result = post_process_embeddings(doc_hash)
+        logger.info("  [6/6] embeddings done %.1fs — %s", time.perf_counter() - t, emb_result)
 
         elapsed = time.perf_counter() - t_start
         logger.info("DONE ✓ '%s' in %.1fs", doc_name, elapsed)

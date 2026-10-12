@@ -493,7 +493,7 @@ def _step2b_fix_section_properties(session, document_hash: str) -> str:
             """
             MATCH (d:Document)-[:CONTAINS]->(s:Section)
             WHERE d.hash = $document_hash
-            REMOVE s.embedding
+            REMOVE s.embedding, s.embedding_v2
             """,
             document_hash=document_hash,
         )
@@ -539,7 +539,7 @@ def _step3_generate_embeddings(session, document_hash: str) -> str:
             if not embedding:
                 continue
             session.run(
-                "MATCH (s) WHERE elementId(s) = $eid SET s.embedding = $emb",
+                "MATCH (s) WHERE elementId(s) = $eid SET s.embedding = $emb, s.embedding_v2 = $emb",
                 eid=node["element_id"],
                 emb=embedding,
             )
