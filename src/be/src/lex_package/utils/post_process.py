@@ -20,6 +20,9 @@ from lex_package.utils.embeddings import embed_texts_batch_unconditional
 
 logger = logging.getLogger("lex_package.post_process")
 
+EXPECTED_EMBEDDING_DIM = 4096  # qwen3-embedding-8b; must match every vector index
+EMBEDDABLE_LABELS = ("Section", "CommentatoSection", "FiscalitaSection")  # same abstract/plain_text fields
+
 
 def _generate_section_abstract(
     plain_text: str,
@@ -509,47 +512,70 @@ def _step2b_fix_section_properties(session, document_hash: str) -> str:
 
 def _step3_generate_embeddings(session, document_hash: str) -> str:
     """
-    Generate embeddings for Section nodes belonging to the current document
-    that have plain_text but no embedding (step 2b cleared them before this runs).
+    Generate embeddings for Section/CommentatoSection/FiscalitaSection nodes
+    belonging to the current document that have plain_text but no embedding
+    (step 2b clears Section's embeddings before this runs; the other two
+    labels are picked up here directly since nothing upstream clears them).
+
+    Each label is processed independently so a failure on one (bad query,
+    write error) doesn't stop the others from being embedded.
     """
-    try:
-        result = session.run(
-            """
-            MATCH (d:Document)-[:CONTAINS]->(s:Section)
-            WHERE (d.hash = $document_hash OR d.id CONTAINS $document_hash)
-              AND (s.embedding IS NULL OR size(s.embedding) = 0)
-              AND s.plain_text IS NOT NULL
-              AND s.plain_text <> ""
-            RETURN elementId(s) AS element_id,
-                   coalesce(s.abstract, "") + " " + coalesce(s.plain_text, "") AS text
-            """,
-            document_hash=document_hash,
-        )
-        nodes = result.data()
+    total = 0
+    failed_ids: list[str] = []
 
-        if not nodes:
-            logger.info("post_process step3: no Section nodes need embeddings")
-            return "0 embeddings generated"
-
-        texts = [n["text"] for n in nodes]
-        embeddings = embed_texts_batch_unconditional(texts)
-        total = 0
-
-        for node, embedding in zip(nodes, embeddings):
-            if not embedding:
-                continue
-            session.run(
-                "MATCH (s) WHERE elementId(s) = $eid SET s.embedding = $emb, s.embedding_v2 = $emb",
-                eid=node["element_id"],
-                emb=embedding,
+    for label in EMBEDDABLE_LABELS:
+        try:
+            result = session.run(
+                f"""
+                MATCH (d:Document)-[:CONTAINS]->(n:`{label}`)
+                WHERE (d.hash = $document_hash OR d.id CONTAINS $document_hash)
+                  AND (n.embedding IS NULL OR size(n.embedding) = 0)
+                  AND n.plain_text IS NOT NULL
+                  AND n.plain_text <> ""
+                RETURN elementId(n) AS element_id,
+                       coalesce(n.abstract, "") + " " + coalesce(n.plain_text, "") AS text
+                """,
+                document_hash=document_hash,
             )
-            total += 1
+            nodes = result.data()
+            if not nodes:
+                continue
 
-        logger.info("post_process step3: generated %d embeddings", total)
-        return f"{total} embeddings generated"
-    except Exception as exc:
-        logger.error("post_process step3 failed: %s", exc)
-        return f"error: {exc}"
+            texts = [n["text"] for n in nodes]
+            embeddings = embed_texts_batch_unconditional(texts)
+            label_failed = []
+
+            for node, embedding in zip(nodes, embeddings):
+                if not embedding or len(embedding) != EXPECTED_EMBEDDING_DIM:
+                    label_failed.append(node["element_id"])
+                    continue
+                try:
+                    session.run(
+                        "MATCH (n) WHERE elementId(n) = $eid SET n.embedding = $emb, n.embedding_v2 = $emb",
+                        eid=node["element_id"],
+                        emb=embedding,
+                    )
+                    total += 1
+                except Exception as exc:
+                    logger.error("post_process step3 (%s) write failed for %s: %s", label, node["element_id"], exc)
+                    label_failed.append(node["element_id"])
+
+            if label_failed:
+                logger.warning(
+                    "post_process step3 (%s): %d/%d nodes failed to embed for document %s — eids: %s",
+                    label, len(label_failed), len(nodes), document_hash, label_failed,
+                )
+                failed_ids.extend(label_failed)
+            logger.info(
+                "post_process step3 (%s): %d embeddings generated", label, len(nodes) - len(label_failed),
+            )
+        except Exception as exc:
+            logger.error("post_process step3 (%s) failed: %s", label, exc)
+
+    summary = f"{total} embeddings generated"
+    if failed_ids:
+        summary += f", {len(failed_ids)} failed"
+    return summary
 
 
 # ── Public entry points ────────────────────────────────────────────────────────
@@ -671,7 +697,8 @@ def post_process_fast_steps(document_hash: str) -> dict[str, str]:
 
 def post_process_embeddings(document_hash: str) -> str:
     """
-    Generate embeddings for Section nodes of the given document.
+    Generate embeddings for Section/CommentatoSection/FiscalitaSection nodes
+    of the given document.
 
     Intended to be submitted to a background executor *after* the ingestion
     job has already been marked Completed, so CPU-heavy encoding does not

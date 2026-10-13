@@ -27,6 +27,8 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 logger = logging.getLogger(__name__)
 
+EMBEDDING_TRUNCATE_TOKENS = 8000  # server limit is 8192 tokens; truncate instead of rejecting
+
 
 # ── Env-var lookup tables ─────────────────────────────────────────────────────
 
@@ -153,6 +155,12 @@ def build_embedding_model(
         # the server. Qwen reads those IDs with its own vocabulary, producing
         # scrambled input. Setting this to False sends raw UTF-8 strings.
         "check_embedding_ctx_length": False,
+        # Let the server cut texts over its limit instead of rejecting the
+        # whole batch — one long section no longer sinks every other section
+        # embedded alongside it.
+        "model_kwargs": {"extra_body": {"truncate_prompt_tokens": EMBEDDING_TRUNCATE_TOKENS}},
+        "timeout": 60.0,
+        "max_retries": 2,
     }
     if base_url:
         kwargs["base_url"] = base_url

@@ -90,14 +90,35 @@ def embed_texts_batch(texts: list[str]) -> list[list[float]]:
 
 
 def embed_texts_batch_unconditional(texts: list[str]) -> list[list[float]]:
-    """Like embed_texts_batch but always runs regardless of embeddings_enabled() flag."""
+    """Like embed_texts_batch but always runs regardless of embeddings_enabled() flag.
+
+    If the whole batch fails, retries each text alone so one bad text (too
+    long, transient server error) doesn't sink every other text in the same
+    call — only texts that still fail on their own come back as [].
+    """
     cleaned = [(t or "").strip() for t in texts]
     try:
         vecs = _get_embedder_unconditional().embed_documents(cleaned)
         return [[float(x) for x in vec] for vec in vecs]
     except Exception as e:
-        logger.error("embed_texts_batch_unconditional failed: %s", e)
-        return [[] for _ in texts]
+        if len(cleaned) == 1:
+            logger.error("embed_texts_batch_unconditional: text failed on its own (%d chars): %s", len(cleaned[0]), e)
+            return [[]]
+        logger.warning(
+            "embed_texts_batch_unconditional: batch of %d failed (%s) — retrying one by one",
+            len(cleaned), e,
+        )
+
+    vectors: list[list[float]] = []
+    embedder = _get_embedder_unconditional()
+    for text in cleaned:
+        try:
+            vec = embedder.embed_documents([text])[0]
+            vectors.append([float(x) for x in vec])
+        except Exception as e:
+            logger.error("embed_texts_batch_unconditional: text failed on its own (%d chars): %s", len(text), e)
+            vectors.append([])
+    return vectors
 
 
 def cosine_similarity(a: Iterable[float], b: Iterable[float]) -> float:
