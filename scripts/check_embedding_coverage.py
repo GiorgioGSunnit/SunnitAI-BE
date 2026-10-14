@@ -15,7 +15,8 @@ Usage (on the server, inside the BE virtualenv):
 
 Options:
     --labels    comma-separated labels (default: every label with a vector index in V2's searches)
-    --strict    exit with code 1 if any node with text has no embedding_v2 (for step 9)
+    --strict    exit with code 1 if any Section / CommentatoSection / FiscalitaSection with text
+                has no embedding_v2 (for step 9)
 """
 from __future__ import annotations
 
@@ -39,10 +40,9 @@ load_dotenv(_ROOT / ".env.local", override=False)      # local dev override
 DEFAULT_LABELS = ["Section", "CommentatoSection", "FiscalitaSection", "CcnlSection",
                   "Document", "LegalAct", "Penalty", "CourtCase"]
 
-# What counts as "has text" per label (nodes without text can't be embedded).
-TEXT_EXPR = {
-    "Section": "coalesce(n.plain_text, '') <> ''",
-}
+# What counts as "has text" per label: the backfill's rule (nodes without text can't be embedded).
+HAS_TEXT = "(trim(coalesce(n.plain_text, '')) <> '' OR trim(coalesce(n.abstract, '')) <> '')"
+TEXT_EXPR = {label: HAS_TEXT for label in ("Section", "CommentatoSection", "FiscalitaSection")}
 TAG = re.compile(r"^\W*(\[[^\]]+\])")          # [PENALE], [CCNL]… (\W also skips a leading BOM)
 
 
@@ -78,8 +78,12 @@ def main() -> int:
                        count(CASE WHEN {has_text} AND n.embedding_v2 IS NULL THEN 1 END) AS missing
                 """
             ).single()
-            missing_total += r["missing"] if r["nodes"] else 0
-            print(f"  {label:<20}{r['nodes']:>9}{r['with_text']:>11}{r['old']:>11}{r['new']:>14}{r['missing']:>13}")
+            # Only the labels the backfill embeds count as missing (Document etc. have no v2 plan).
+            embeddable = label in TEXT_EXPR
+            if embeddable:
+                missing_total += r["missing"]
+            with_text, missing = (r["with_text"], r["missing"]) if embeddable else ("-", "-")
+            print(f"  {label:<20}{r['nodes']:>9}{with_text:>11}{r['old']:>11}{r['new']:>14}{missing:>13}")
 
         # 2. embedding_version values
         print("\n== 2. embedding_version on Sections ==")

@@ -1,0 +1,24 @@
+# Test cases for compare_retrieval.py: question | document | article[, article...]
+# Everyday questions; expected articles to be confirmed by someone legal. Add your own below.
+#
+# Codice Civile
+Ho firmato un contratto perché mi hanno minacciato: posso annullarlo? | Codice Civile 2026 | 1434, 1435
+Un contratto che va contro una norma imperativa è valido? | Codice Civile 2026 | 1418
+Il contratto firmato da un minorenne è valido? | Codice Civile 2026 | 1425
+Ho comprato un'auto usata con un difetto nascosto che il venditore non mi ha detto: cosa posso fare? | Codice Civile 2026 | 1490, 1492
+Entro quanto tempo devo segnalare al venditore i difetti della cosa che ho comprato? | Codice Civile 2026 | 1495
+Il mio debitore non mi ha pagato alla scadenza: deve risarcirmi il danno? | Codice Civile 2026 | 1218
+Chi mi ha causato un danno con un comportamento sbagliato deve risarcirmi? | Codice Civile 2026 | 2043
+Il cane del vicino mi ha morso: il proprietario deve pagare i danni? | Codice Civile 2026 | 2052
+In quanti anni si prescrive in generale un diritto? | Codice Civile 2026 | 2946
+Mio padre è morto senza testamento: chi eredita? | Codice Civile 2026 | 565, 566
+Posso lasciare tutto il mio patrimonio a un amico escludendo i figli? | Codice Civile 2026 | 536, 537
+Il vicino ha piantato un albero vicino al confine: a che distanza deve stare? | Codice Civile 2026 | 892
+#
+# Codice Penale
+Cosa rischia chi ruba della merce in un supermercato? | Codice Penale 2026 | 624
+Se uno mi aggredisce in casa e io lo ferisco per difendermi, vengo punito? | Codice Penale 2026 | 52
+Cosa rischia chi minaccia un'altra persona di farle del male? | Codice Penale 2026 | 612
+Che reato commette chi inganna una persona anziana per farsi dare dei soldi? | Codice Penale 2026 | 640
+È reato offendere qualcuno sui social davanti ad altre persone? | Codice Penale 2026 | 595
+Cosa rischia chi guida ubriaco e causa la morte di una persona? | Codice Penale 2026 | 589-bis
