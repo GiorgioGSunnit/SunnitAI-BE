@@ -83,10 +83,10 @@ if ! command -v python3.11 &>/dev/null; then
 fi
 ok "Python: $(python3.11 --version)"
 
-# System libs needed by PDF rendering (same as Dockerfile)
+# System libs needed by PDF rendering and OCR of scanned PDFs (same as Dockerfile)
 log "  Checking system libraries..."
-dpkg -l libglib2.0-0 libgl1 curl &>/dev/null || \
-    apt-get install -y -qq libglib2.0-0 libgl1 curl
+dpkg -l libglib2.0-0 libgl1 curl tesseract-ocr tesseract-ocr-ita poppler-utils &>/dev/null || \
+    apt-get install -y -qq libglib2.0-0 libgl1 curl tesseract-ocr tesseract-ocr-ita poppler-utils
 ok "System libraries present"
 
 # systemd available

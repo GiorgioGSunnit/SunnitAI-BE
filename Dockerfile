@@ -7,11 +7,14 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# System dependencies (PDF rendering + curl for healthcheck)
+# System dependencies (PDF rendering, OCR of scanned PDFs + curl for healthcheck)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libglib2.0-0 \
     libgl1 \
     curl \
+    tesseract-ocr \
+    tesseract-ocr-ita \
+    poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for layer caching
