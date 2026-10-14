@@ -273,11 +273,13 @@ def _normalize_title(title: str) -> str:
 
 def find_document_by_name(name: str) -> list[dict]:
     """
-    Return all LEGAL_DOC nodes whose title fuzzy-matches the given name.
+    Return all LEGAL_DOC nodes whose title matches the given name.
 
-    Matching strategy (in order of strictness):
-      1. Exact match after normalisation (lowercase, strip years/punctuation)
-      2. One normalised title contains the other (substring match)
+    Matching: exact match after normalisation (lowercase, strip years/punctuation),
+    so "Codice Penale - 2026" matches "Codice Penale 2025". Callers delete what is
+    returned, so titles that only contain one another never match: that deleted
+    "Codice Penale Commentato ADE" when "Codice Penale" was uploaded, and a title
+    that normalises to nothing would have matched every document.
 
     Returns a list of dicts with keys: id, name, hash, file_name.
     Empty list if none found or Neo4J is not configured.
@@ -307,12 +309,9 @@ def find_document_by_name(name: str) -> list[dict]:
             existing_norm = _normalize_title(doc["name"] or "")
             if not existing_norm:
                 continue
-            # Exact normalised match OR one contains the other
-            if (
-                new_norm == existing_norm
-                or new_norm in existing_norm
-                or existing_norm in new_norm
-            ):
+            # Exact normalised match only — substring matching caused
+            # false positives (e.g. "Codice Penale" deleting "Codice Penale Commentato ADE")
+            if new_norm == existing_norm:
                 matches.append(doc)
                 logger.debug(
                     "find_document_by_name: %r matched existing %r "
