@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
 """
-Batch ingestion daemon — watches /opt/sunnitai-be/document_upload/ for PDFs,
-ingests each one, deletes on success, moves to /opt/sunnitai-be/document_failed/
-on failure. Runs continuously or as a one-shot pass (--once flag).
+Batch ingestion daemon — watches BATCH_UPLOAD_DIR (default /opt/sunnitai-be/paco_upload/)
+for PDFs, ingests each one, deletes on success, moves to BATCH_FAILED_DIR (default
+/opt/sunnitai-be/document_failed/) on failure. Runs continuously or as a one-shot pass
+(--once flag).
 
 Usage:
     python3 batch_ingest.py          # continuous watch mode
     python3 batch_ingest.py --once   # process current files and exit
+
+Settings (environment or /opt/sunnitai-be/.env):
+    BATCH_UPLOAD_DIR   folder watched for PDFs
+    BATCH_FAILED_DIR   folder that receives the PDFs that failed
+    BATCH_LOG_FILE     log file (default /var/log/sunnitai-ingest.log)
 
 Document name is derived from filename stem, with common normalizations.
 Override by placing a .name file alongside the PDF:
@@ -15,6 +21,7 @@ Override by placing a .name file alongside the PDF:
 import asyncio
 import hashlib
 import logging
+import logging.handlers
 import os
 import sys
 import time
@@ -24,9 +31,16 @@ from pathlib import Path
 sys.path.insert(0, '/opt/sunnitai-be/src/be/src')
 sys.path.insert(0, '/opt/sunnitai-be/src/be/azure-durable-function')
 
-UPLOAD_DIR  = Path("/opt/sunnitai-be/document_upload")
-FAILED_DIR  = Path("/opt/sunnitai-be/document_failed")
-LOG_FILE    = Path("/var/log/sunnitai-ingest.log")
+try:
+    # Values already in the environment (e.g. the service's EnvironmentFile) win.
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).resolve().parent / ".env", override=False)
+except ImportError:
+    pass
+
+UPLOAD_DIR  = Path(os.environ.get("BATCH_UPLOAD_DIR", "/opt/sunnitai-be/paco_upload"))
+FAILED_DIR  = Path(os.environ.get("BATCH_FAILED_DIR", "/opt/sunnitai-be/document_failed"))
+LOG_FILE    = Path(os.environ.get("BATCH_LOG_FILE", "/var/log/sunnitai-ingest.log"))
 POLL_INTERVAL = 30  # seconds between directory scans
 
 logging.basicConfig(
@@ -34,7 +48,8 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s — %(message)s",
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler(LOG_FILE),
+        # Reopens the file when logrotate moves it, instead of writing to the deleted copy.
+        logging.handlers.WatchedFileHandler(LOG_FILE),
     ],
 )
 logger = logging.getLogger("batch_ingest")
@@ -54,6 +69,25 @@ def doc_name_from_pdf(pdf_path: Path) -> str:
     stem = re.sub(r'\s*Edizione\s*20\d\d$', '', stem, flags=re.IGNORECASE)
     stem = stem.strip()
     return stem
+
+
+def check_embeddings(doc_name: str, result: str) -> None:
+    """Log an ERROR when the embedding step left sections without embedding_v2.
+
+    The document stays ingested (DONE): its sections are in the graph, they just
+    can't be found by vector search until the backfill embeds them.
+    """
+    try:
+        from lex_package.utils.post_process import embedding_summary_ok
+        complete = embedding_summary_ok(result)
+    except Exception as exc:  # a broken check must never fail the ingestion
+        logger.warning("  could not check the embedding result for '%s': %s", doc_name, exc)
+        return
+    if not complete:
+        logger.error(
+            "  EMBEDDINGS INCOMPLETE for '%s' — %s — run scripts/backfill_embeddings_v2.py to fill the gaps",
+            doc_name, result,
+        )
 
 
 def ingest_one(pdf_path: Path) -> bool:
@@ -153,6 +187,7 @@ def ingest_one(pdf_path: Path) -> bool:
             t = time.perf_counter()
             pp_result = post_process_embeddings(doc_hash)
             logger.info("  post-processing embeddings done %.1fs — %s", time.perf_counter() - t, pp_result)
+            check_embeddings(doc_name, pp_result)
 
             elapsed = time.perf_counter() - t_start
             logger.info("DONE ✓ '%s' in %.1fs [SPECIAL fast path]", doc_name, elapsed)
@@ -305,6 +340,7 @@ def ingest_one(pdf_path: Path) -> bool:
             t = time.perf_counter()
             pp_result = post_process_embeddings(doc_hash)
             logger.info("  post-processing embeddings done %.1fs — %s", time.perf_counter() - t, pp_result)
+            check_embeddings(doc_name, pp_result)
 
             elapsed = time.perf_counter() - t_start
             logger.info("DONE ✓ '%s' in %.1fs [CCNL fast path]", doc_name, elapsed)
@@ -383,6 +419,7 @@ def ingest_one(pdf_path: Path) -> bool:
         t = time.perf_counter()
         emb_result = post_process_embeddings(doc_hash)
         logger.info("  [6/6] embeddings done %.1fs — %s", time.perf_counter() - t, emb_result)
+        check_embeddings(doc_name, emb_result)
 
         elapsed = time.perf_counter() - t_start
         logger.info("DONE ✓ '%s' in %.1fs", doc_name, elapsed)

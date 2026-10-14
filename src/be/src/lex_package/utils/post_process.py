@@ -5,7 +5,8 @@ Called after every successful document ingestion to:
   1. Set required properties on DOCUMENT_SECTION nodes (before relabeling)
   2. Relabel uppercase nodes to PascalCase (scoped to current document)
   2b. Fix Section node name and abstract, clear embeddings for re-generation
-  3. Generate embeddings for new Section nodes using sentence-transformers
+  3. Generate embeddings (qwen3-embedding-8b, plain text) for the document's
+     Section/CommentatoSection/FiscalitaSection nodes
 
 Each step is wrapped in try/except — a failure in one step does not abort
 the others. Returns a summary dict for logging/debugging.
@@ -22,6 +23,10 @@ logger = logging.getLogger("lex_package.post_process")
 
 EXPECTED_EMBEDDING_DIM = 4096  # qwen3-embedding-8b; must match every vector index
 EMBEDDABLE_LABELS = ("Section", "CommentatoSection", "FiscalitaSection")  # same abstract/plain_text fields
+EMBED_BATCH_SIZE = 64          # texts per embedding request and per Neo4j write
+# A node is embedded when it has text: the same rule as scripts/backfill_embeddings_v2.py and
+# scripts/check_embedding_coverage.py, so new and backfilled documents end up alike.
+HAS_TEXT = "(trim(coalesce(n.plain_text, '')) <> '' OR trim(coalesce(n.abstract, '')) <> '')"
 
 
 def _generate_section_abstract(
@@ -510,71 +515,146 @@ def _step2b_fix_section_properties(session, document_hash: str) -> str:
 
 # ── Step 3 ─────────────────────────────────────────────────────────────────────
 
+def _pending_embeddings_match(label: str) -> str:
+    """The document's nodes of `label` that have text but no embedding_v2 yet."""
+    return f"""
+        MATCH (d:Document)-[:CONTAINS]->(n:`{label}`)
+        WHERE (d.hash = $document_hash OR d.id CONTAINS $document_hash)
+          AND n.embedding_v2 IS NULL
+          AND {HAS_TEXT}
+    """
+
+
+# embedding_v2 is what V2 searches in text mode. `embedding` gets the same vector
+# only where it is empty: an existing (token-ID) vector stays until the cleanup,
+# so V2 can still be switched back to token_ids mode.
+_WRITE_EMBEDDINGS = """
+    UNWIND $rows AS row
+    MATCH (n) WHERE elementId(n) = row.eid
+    SET n.embedding_v2 = row.emb,
+        n.embedding = CASE WHEN n.embedding IS NULL OR size(n.embedding) = 0
+                           THEN row.emb ELSE n.embedding END
+"""
+
+
+def _write_embeddings(session, label: str, rows: list[dict]) -> list[str]:
+    """Write a batch in one query; if that fails, node by node. Returns the eids not written."""
+    if not rows:
+        return []
+    try:
+        session.run(_WRITE_EMBEDDINGS, rows=rows).consume()
+        return []
+    except Exception as exc:
+        logger.warning(
+            "post_process step3 (%s): batch write of %d failed (%s) — writing one by one", label, len(rows), exc,
+        )
+    failed = []
+    for row in rows:
+        try:
+            session.run(_WRITE_EMBEDDINGS, rows=[row]).consume()
+        except Exception as exc:
+            logger.error("post_process step3 (%s) write failed for %s: %s", label, row["eid"], exc)
+            failed.append(row["eid"])
+    return failed
+
+
+def _count_missing_embeddings(session, document_hash: str) -> int | None:
+    """Nodes of the document that have text but still no embedding_v2; None if the count failed."""
+    try:
+        missing = 0
+        for label in EMBEDDABLE_LABELS:
+            record = session.run(
+                _pending_embeddings_match(label) + "RETURN count(DISTINCT n) AS missing",
+                document_hash=document_hash,
+            ).single()
+            missing += record["missing"] if record else 0
+        return missing
+    except Exception as exc:
+        logger.error("post_process step3: missing-embeddings check failed for document %s: %s", document_hash, exc)
+        return None
+
+
+_SUMMARY_OK = re.compile(r"\d+ embeddings generated")
+
+
+def embedding_summary_ok(summary: str) -> bool:
+    """True when step 3 left no node of the document without embedding_v2.
+
+    Any problem adds a clause to the summary ("..., 3 failed", "..., errors on
+    Section", "..., 3 still without embedding_v2") or makes it "error: ...".
+    """
+    return bool(_SUMMARY_OK.fullmatch(summary or ""))
+
+
 def _step3_generate_embeddings(session, document_hash: str) -> str:
     """
-    Generate embeddings for Section/CommentatoSection/FiscalitaSection nodes
-    belonging to the current document that have plain_text but no embedding
-    (step 2b clears Section's embeddings before this runs; the other two
-    labels are picked up here directly since nothing upstream clears them).
+    Embed the current document's Section/CommentatoSection/FiscalitaSection
+    nodes that have text (plain_text or abstract) but no embedding_v2. Step 2b
+    clears Section's vectors before this runs; the other two labels are picked
+    up here directly since nothing upstream clears them.
 
-    Each label is processed independently so a failure on one (bad query,
-    write error) doesn't stop the others from being embedded.
+    Nodes are embedded and written EMBED_BATCH_SIZE at a time: a slow or failed
+    request only affects its own batch, and a large document (Codice Penale has
+    14,000 sections) never holds all its vectors in memory at once. Each label
+    is processed independently so a failure on one doesn't stop the others.
+
+    Returns "N embeddings generated", plus a clause for every problem
+    (see embedding_summary_ok).
     """
     total = 0
     failed_ids: list[str] = []
+    label_errors: list[str] = []
 
     for label in EMBEDDABLE_LABELS:
+        done = 0
+        label_failed: list[str] = []
         try:
-            result = session.run(
-                f"""
-                MATCH (d:Document)-[:CONTAINS]->(n:`{label}`)
-                WHERE (d.hash = $document_hash OR d.id CONTAINS $document_hash)
-                  AND (n.embedding IS NULL OR size(n.embedding) = 0)
-                  AND n.plain_text IS NOT NULL
-                  AND n.plain_text <> ""
-                RETURN elementId(n) AS element_id,
+            nodes = session.run(
+                _pending_embeddings_match(label) + """
+                RETURN DISTINCT elementId(n) AS element_id,
                        coalesce(n.abstract, "") + " " + coalesce(n.plain_text, "") AS text
                 """,
                 document_hash=document_hash,
-            )
-            nodes = result.data()
+            ).data()
             if not nodes:
                 continue
 
-            texts = [n["text"] for n in nodes]
-            embeddings = embed_texts_batch_unconditional(texts)
-            label_failed = []
-
-            for node, embedding in zip(nodes, embeddings):
-                if not embedding or len(embedding) != EXPECTED_EMBEDDING_DIM:
-                    label_failed.append(node["element_id"])
-                    continue
-                try:
-                    session.run(
-                        "MATCH (n) WHERE elementId(n) = $eid SET n.embedding = $emb, n.embedding_v2 = $emb",
-                        eid=node["element_id"],
-                        emb=embedding,
-                    )
-                    total += 1
-                except Exception as exc:
-                    logger.error("post_process step3 (%s) write failed for %s: %s", label, node["element_id"], exc)
-                    label_failed.append(node["element_id"])
+            for start in range(0, len(nodes), EMBED_BATCH_SIZE):
+                batch = nodes[start:start + EMBED_BATCH_SIZE]
+                embeddings = embed_texts_batch_unconditional([node["text"] for node in batch])
+                rows = []
+                for node, embedding in zip(batch, embeddings):
+                    if embedding and len(embedding) == EXPECTED_EMBEDDING_DIM:
+                        rows.append({"eid": node["element_id"], "emb": embedding})
+                    else:
+                        label_failed.append(node["element_id"])
+                not_written = _write_embeddings(session, label, rows)
+                label_failed.extend(not_written)
+                done += len(rows) - len(not_written)
 
             if label_failed:
                 logger.warning(
-                    "post_process step3 (%s): %d/%d nodes failed to embed for document %s — eids: %s",
-                    label, len(label_failed), len(nodes), document_hash, label_failed,
+                    "post_process step3 (%s): %d/%d nodes failed to embed for document %s — first eids: %s",
+                    label, len(label_failed), len(nodes), document_hash, label_failed[:20],
                 )
-                failed_ids.extend(label_failed)
-            logger.info(
-                "post_process step3 (%s): %d embeddings generated", label, len(nodes) - len(label_failed),
-            )
+            logger.info("post_process step3 (%s): %d embeddings generated", label, done)
         except Exception as exc:
-            logger.error("post_process step3 (%s) failed: %s", label, exc)
+            logger.error("post_process step3 (%s) failed after %d embeddings: %s", label, done, exc)
+            label_errors.append(label)
+        finally:
+            total += done
+            failed_ids.extend(label_failed)
 
     summary = f"{total} embeddings generated"
     if failed_ids:
         summary += f", {len(failed_ids)} failed"
+    if label_errors:
+        summary += f", errors on {'/'.join(label_errors)}"
+    missing = _count_missing_embeddings(session, document_hash)
+    if missing is None:
+        summary += ", missing-embeddings check failed"
+    elif missing:
+        summary += f", {missing} still without embedding_v2"
     return summary
 
 
@@ -704,7 +784,8 @@ def post_process_embeddings(document_hash: str) -> str:
     job has already been marked Completed, so CPU-heavy encoding does not
     block the job lifecycle or API responses.
 
-    Returns a status string (e.g. "42 embeddings generated").
+    Returns a status string (e.g. "42 embeddings generated"); use
+    embedding_summary_ok() to tell whether anything was left without embedding_v2.
     """
     logger.info("post_process_embeddings START — document_hash=%s", document_hash)
     try:
@@ -728,7 +809,15 @@ def post_process_embeddings(document_hash: str) -> str:
     finally:
         driver.close()
 
-    logger.info("post_process_embeddings COMPLETE — document_hash=%s result=%s", document_hash, result)
+    if embedding_summary_ok(result):
+        logger.info("post_process_embeddings COMPLETE — document_hash=%s result=%s", document_hash, result)
+    else:
+        # The document is in the graph either way; the backfill fills the gaps.
+        logger.error(
+            "post_process_embeddings INCOMPLETE — document_hash=%s result=%s — "
+            "run scripts/backfill_embeddings_v2.py to fill the gaps",
+            document_hash, result,
+        )
     return result
 
 
@@ -750,7 +839,7 @@ def post_process_ingestion(document_hash: str) -> dict[str, str]:
             "step2":  "ok" | "error: ...",
             "step2c": "ok" | "repaired N" | "error: ...",
             "step2b": "ok" | "error: ...",
-            "step3":  "N embeddings generated" | "error: ...",
+            "step3":  "N embeddings generated[, <problems>]" | "error: ...",
         }
     """
     logger.info("post_process_ingestion START — document_hash=%s", document_hash)
