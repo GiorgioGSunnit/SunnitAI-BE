@@ -3,7 +3,11 @@ Universal PDF page text extraction utility.
 All parsers should use extract_page_text() instead of calling fitz directly
 for text/table extraction, to ensure consistent handling across document types.
 """
+import re
+
 import fitz
+
+_WORD = re.compile(r"\w{3,}")
 
 
 def _flatten_table(table_data: list) -> str:
@@ -14,6 +18,66 @@ def _flatten_table(table_data: list) -> str:
         if cells:
             rows.append("  ".join(cells))
     return "\n".join(rows)
+
+
+def _reading_order(blocks: list, page_width: float) -> list:
+    """Text blocks in reading order.
+
+    A page is read as two columns when the text lying wholly in each half covers
+    a good part of the page's text height and little text crosses the middle.
+    Blocks used to be classified by their centre: on a single-column page every
+    full-width paragraph (centred a point right of the middle, margins being
+    near-symmetric) counted as "right" and every short line or heading as "left",
+    so most single-column pages were read as all short lines first, then all
+    paragraphs — article headings ended up before the previous article's text
+    (Codice degli Appalti: 374 of 402 pages). And a real two-column page whose
+    columns are one or two big blocks each (fewer than 3 per side) was sorted by
+    height, interleaving the columns (Legge sul divorzio, Altalex layout).
+    Measuring text height instead of counting blocks handles both.
+
+    On a real two-column page, blocks spanning both columns (titles, headers,
+    full-width paragraphs) split it into horizontal bands; each band is read
+    left column first, then right column.
+    """
+    def by_position(b):
+        return (round(b[1] / 10) * 10, b[0])
+
+    if page_width <= 0:
+        return sorted(blocks, key=by_position)
+    mid = page_width / 2
+    tolerance = page_width * 0.02          # a column may reach a little past the middle
+
+    def in_left(b):
+        return b[2] <= mid + tolerance
+
+    def in_right(b):
+        return b[0] >= mid - tolerance
+
+    def height(b):
+        return max(0.0, b[3] - b[1]) if len(b) > 4 and str(b[4]).strip() else 0.0
+
+    total = sum(height(b) for b in blocks)
+    left = sum(height(b) for b in blocks if in_left(b))
+    right = sum(height(b) for b in blocks if in_right(b) and not in_left(b))
+    spanning = total - left - right
+    if not (total > 0 and left >= 0.25 * total and right >= 0.25 * total and spanning <= 0.2 * total):
+        return sorted(blocks, key=by_position)
+
+    ordered, band = [], []
+
+    def flush():
+        ordered.extend(sorted((b for b in band if in_left(b)), key=by_position))
+        ordered.extend(sorted((b for b in band if not in_left(b)), key=by_position))
+        band.clear()
+
+    for b in sorted(blocks, key=by_position):
+        if not in_left(b) and not in_right(b):      # crosses the middle: a band boundary
+            flush()
+            ordered.append(b)
+        else:
+            band.append(b)
+    flush()
+    return ordered
 
 
 def extract_page_text(
@@ -51,27 +115,18 @@ def extract_page_text(
             page_width = page.rect.width if page.rect.width > 0 else (
                 max(b[2] for b in blocks) if blocks else 0
             )
-            if page_width > 0:
-                page_mid = page_width / 2
-                left = [b for b in blocks if (b[0] + b[2]) / 2 < page_mid]
-                right = [b for b in blocks if (b[0] + b[2]) / 2 >= page_mid]
-                # Lower floor threshold from 0.25 to 0.20 — a page with
-                # 5 left and 16 right blocks (ratio=0.24) is still two-column
-                if (len(left) >= 3 and len(right) >= 3 and
-                        0.20 <= len(left) / len(blocks) <= 0.80):
-                    left_sorted = sorted(left, key=lambda b: (round(b[1] / 10) * 10, b[0]))
-                    right_sorted = sorted(right, key=lambda b: (round(b[1] / 10) * 10, b[0]))
-                    blocks = left_sorted + right_sorted
-                else:
-                    blocks = sorted(blocks, key=lambda b: (round(b[1] / 10) * 10, b[0]))
-            else:
-                blocks = sorted(blocks, key=lambda b: (round(b[1] / 10) * 10, b[0]))
+            blocks = _reading_order(blocks, page_width)
         for b in blocks:
             if len(b) > 4 and b[4].strip():
                 parts.append(b[4].strip())
 
     # Table extraction runs regardless — even OCR'd PDFs may have
-    # digitally encoded tables if the scan was processed with table detection
+    # digitally encoded tables if the scan was processed with table detection.
+    # A table whose words are (almost) all in the prose already is skipped: the
+    # text blocks include table cells, so appending it repeated the page's text
+    # after itself, article headings included (Legge sul divorzio, Altalex
+    # layout: every page twice, so an article absorbed the repeated page).
+    prose_words = set(_WORD.findall("\n".join(parts).lower()))
     try:
         tables = page.find_tables(clip=clip) if clip else page.find_tables()
         for table in tables:
@@ -79,6 +134,9 @@ def extract_page_text(
             if data:
                 flat = _flatten_table(data)
                 if flat.strip():
+                    table_words = set(_WORD.findall(flat.lower()))
+                    if table_words and len(table_words & prose_words) >= 0.9 * len(table_words):
+                        continue
                     parts.append(flat)
     except Exception:
         pass
