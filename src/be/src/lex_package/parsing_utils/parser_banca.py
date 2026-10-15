@@ -53,52 +53,59 @@ _CAPS_TITLE_RE = re.compile(
 )
 
 
+_FOOTER_CORE = re.compile(r"^(\d+)?\s*(.*?)\s*(\d+)?$", re.S)
+
+
+def _header_core(text):
+    """A header/footer without its page number: '... Altalex 5' and '... Altalex 6' -> '... altalex'."""
+    flat = " ".join(text.split())
+    m = _FOOTER_CORE.match(flat)
+    return (m.group(2) if m else flat).strip().lower()
+
+
 def identify_repeated_headers_footers(doc, min_repeats=3):
-    line_positions = {}
-    ListaRigheRipetute = {}
-    pattern_footer = r"(\d+)?\s*(.*)\s*(\d+)?$"
+    """Texts at the top (top 20%) or bottom (bottom 10%) of at least min_repeats
+    different pages, compared without page numbers.
 
+    Returns every form a caller compares against: the block text and each of its
+    lines (as is and stripped), except bare numbers.
+
+    It used to compare each block with every text seen so far, itself included,
+    which added its position twice more: any single block at the top or bottom of
+    any page reached 3 "repeats" on its own and was removed as a header, i.e. real
+    text was dropped (Codice degli Appalti: 3,195 body lines, no real header). And
+    its page-number pattern was greedy, so "... Altalex 5" and "... Altalex 6" never
+    matched as the same footer.
+    """
+    pages_by_key = {}
+    texts_by_key = {}
     for i, page in enumerate(doc):
-        blocks = page.get_text("blocks")
         height = page.rect.height
-        
-        for block in blocks:
-            y0 = block[1]
+        blocks = sorted((b for b in page.get_text("blocks") if len(b[4].strip()) >= 5), key=lambda b: b[1])
+        # Only the first and last two blocks of a page can be running headers or
+        # footers; annotations repeated near them ("Note:", "In vigore dal ...",
+        # note tails) are body text and stay.
+        for block in blocks[:2] + blocks[-2:] if len(blocks) > 4 else blocks:
             text = block[4].strip()
-
-            if len(text) < 5:
+            y0 = block[1]
+            pos = "top" if y0 < height * 0.2 else "bottom" if y0 > height * 0.90 else None
+            core = _header_core(text) if pos else ""
+            if not core:
                 continue
-            pos = 'top' if y0 < height * 0.2 else 'bottom' if y0 > height * 0.90 else 'middle'
-            if pos in ['top', 'bottom']:
-                line_positions.setdefault(text, []).append(pos)
-                firstmatch = re.match(pattern_footer, text)
-                if firstmatch:
-                    PrimaRiga   = firstmatch.group(2)
-                    if PrimaRiga:
-                        for linea_2 in line_positions:
-                            SecondMatch = re.match(pattern_footer, linea_2)
-                            if SecondMatch:
-                                SecondaRiga = SecondMatch.group(2)
-                                if SecondaRiga:
-                                    if (PrimaRiga == SecondaRiga):
-                                        line_positions.setdefault(text, []).append(pos)
-                                        line_positions.setdefault(linea_2, []).append(pos)
+            pages_by_key.setdefault((core, pos), set()).add(i)
+            texts_by_key.setdefault((core, pos), set()).add(text)
 
-    # #####visualizzo le più ripetute
-    # sorted_lines = sorted(repeated, key=lambda x: x[1], reverse=True)
-    # for rank, (line, count) in enumerate(sorted_lines[:10], start=1):
-    #     print(f"(Regolamento) RIPETIZIONI: {rank}. '{line}' - {count} ripetizioni")
-
-    ListaRigheRipetute = [
-            line for line, pos_list in line_positions.items()
-            if len(pos_list) >= min_repeats and (
-                pos_list.count("top") >= min_repeats or pos_list.count("bottom") >= min_repeats
-            )
-        ]
-#    print("@##################################################################@")
-#    print(f" 🍆🍆🍆 {ListaRigheRipetute}")
-#    print("@##################################################################@")
-    return ListaRigheRipetute
+    repeated = set()
+    for key, pages in pages_by_key.items():
+        if len(pages) < min_repeats:
+            continue
+        for text in texts_by_key[key]:
+            repeated.add(text)
+            for line in text.split("\n"):
+                if line.strip() and not line.strip().isdigit():
+                    repeated.add(line)
+                    repeated.add(line.strip())
+    return list(repeated)
 
 
 
