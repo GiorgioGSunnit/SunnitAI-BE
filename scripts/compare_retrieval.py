@@ -164,6 +164,9 @@ def main() -> int:
     parser.add_argument("--old-min", type=float, default=0.25, help="V2's min_score today")
     parser.add_argument("--new-min", type=float, default=0.55, help="V2's text-mode min_score")
     parser.add_argument("--no-pool", action="store_true", help="skip the same-candidates comparison")
+    parser.add_argument("--skip-counts", action="store_true",
+                        help="don't count all Sections (a full scan: minutes on a large production graph); "
+                             "implies --no-pool")
     parser.add_argument("--out", default=None, help="write per-case results as JSON")
     args = parser.parse_args()
 
@@ -187,17 +190,21 @@ def main() -> int:
         states = {r["name"]: f"{r['state']} {r['populationPercent']:.0f}%" for r in session.run(
             "SHOW INDEXES YIELD name, state, populationPercent WHERE name IN $names "
             "RETURN name, state, populationPercent", names=[args.old_index, args.new_index])}
-        counts = session.run(
-            "MATCH (s:Section) WHERE coalesce(s.plain_text, '') <> '' "
-            "RETURN count(s) AS text, count(CASE WHEN s.embedding_v2 IS NOT NULL THEN 1 END) AS v2"
-        ).single()
         log(f"Indexes: {args.old_index} {states.get(args.old_index, 'MISSING')}, "
             f"{args.new_index} {states.get(args.new_index, 'MISSING')}")
-        log(f"Sections with plain_text: {counts['text']}, of which with embedding_v2: {counts['v2']}")
+        if args.skip_counts:
+            partial = False
+            log("Section counts skipped (--skip-counts)")
+        else:
+            counts = session.run(
+                "MATCH (s:Section) WHERE coalesce(s.plain_text, '') <> '' "
+                "RETURN count(s) AS text, count(CASE WHEN s.embedding_v2 IS NOT NULL THEN 1 END) AS v2"
+            ).single()
+            log(f"Sections with plain_text: {counts['text']}, of which with embedding_v2: {counts['v2']}")
+            partial = counts["v2"] < counts["text"]
 
         modes = ["old"]
         if args.new_index in states:
-            partial = counts["v2"] < counts["text"]
             if partial and not args.no_pool:
                 modes.append("pool")
             modes.append("new")
