@@ -354,6 +354,22 @@ def delete_document_by_id(doc_node_id: str) -> dict:
                 )
                 sections_deleted = (section_result.single() or {}).get("deleted", 0)
 
+                # Never-relabelled DOCUMENT_SECTION nodes of this document, left by an
+                # ingestion that failed after writing: no Section label, so the delete
+                # above misses them and the next ingestion would relabel them into
+                # extra copies. Their id carries the document hash; the id constraint
+                # on DOCUMENT_SECTION makes this prefix lookup an index seek.
+                if doc_node_id.startswith("LEGAL_DOC::"):
+                    stale_result = tx.run(
+                        """
+                        MATCH (s:DOCUMENT_SECTION) WHERE s.id STARTS WITH $prefix
+                        DETACH DELETE s
+                        RETURN count(s) AS deleted
+                        """,
+                        prefix=f"DOCUMENT_SECTION::{doc_node_id.split('::', 1)[1]}::",
+                    )
+                    sections_deleted += (stale_result.single() or {}).get("deleted", 0)
+
                 doc_result = tx.run(
                     """
                     MATCH (d:Document {id: $doc_id})
