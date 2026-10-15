@@ -108,8 +108,10 @@ def plan_groups(rows: list[dict]) -> list[dict]:
 
 def neo4j_version(session) -> str:
     try:
-        r = session.run("CALL dbms.components() YIELD versions RETURN versions[0] AS v").single()
-        return r["v"] if r else "?"
+        rows = session.run("CALL dbms.components() YIELD name, versions "
+                           "RETURN name, versions[0] AS v").data()     # one row per component
+        kernel = next((r for r in rows if r["name"] == "Neo4j Kernel"), rows[0] if rows else None)
+        return kernel["v"] if kernel else "?"
     except Exception:
         return "?"
 
