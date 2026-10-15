@@ -1,3 +1,4 @@
+import hashlib
 import json
 import re
 
@@ -57,10 +58,18 @@ def nojunkchars(text):
 
 def noforbiddenchars(text):
     illegal_chars = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
-    
+
     if isinstance(text, str):
         return illegal_chars.sub("", text)
     return text
+
+
+def text_hash(text) -> str:
+    """Deterministic hash of a section text: sha256 of nojunkchars(text), the same
+    value flatten.stable_hash computes when a parser gives none. Not Python's hash():
+    that is salted per process, so the same section got a different hash, and
+    therefore a different node id, every time a document was ingested."""
+    return hashlib.sha256(nojunkchars(text).encode("utf-8")).hexdigest()
 
 def successivo(IdenficativoPrecedente, identificativo):
     IdenficativoPrecedente = pulisci_e_converti(IdenficativoPrecedente)
@@ -562,7 +571,7 @@ def parser_articolo(s) -> list[dict]:
                 "identificativo": IdentificativoPrecedente,
                 "contenuto": contenuto_senza_struttura,
                 "flag": risultato,
-                "hash": hash(nojunkchars(contenuto_senza_struttura))
+                "hash": text_hash(contenuto_senza_struttura)
             }
         ]
 
@@ -658,7 +667,7 @@ def parser_articolo(s) -> list[dict]:
                                 "identificativo": IdentificativoPrecedente,
                                 "contenuto": contenuto_senza_struttura,
                                 "flag": risultato,
-                                "hash": hash(nojunkchars(contenuto_senza_struttura))
+                                "hash": text_hash(contenuto_senza_struttura)
                             }
                         )
                         IdentificativoPrecedente = identificativo
@@ -684,7 +693,7 @@ def parser_articolo(s) -> list[dict]:
                 "identificativo": IdentificativoPrecedente,
                 "contenuto": contenuto_senza_struttura,
                 "flag": risultato_flag,
-                "hash": hash(nojunkchars(contenuto_senza_struttura))
+                "hash": text_hash(contenuto_senza_struttura)
             }
         )
 

@@ -75,6 +75,18 @@ def stable_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def section_node_id(document_hash: str, section_name: str, text: str) -> str:
+    """Deterministic Section node id: the same document, section name and text give
+    the same id in every process, so re-ingesting a document MERGEs onto its nodes
+    instead of adding copies. (It used to come from the parsers' Python hash(), which
+    is salted per process.) The name is part of the key so two sections with
+    identical text (e.g. several "abrogato" articles) stay separate nodes; the text
+    is whitespace-normalised. Parsed back by post_process and V2 only up to the
+    document hash ("DOCUMENT_SECTION::<document_hash>::..."), which is unchanged."""
+    key = f"{section_name}\x1f{' '.join((text or '').split())}"
+    return f"DOCUMENT_SECTION::{document_hash}::{stable_hash(key)[:20]}"
+
+
 def _clean_id(raw: str) -> str:
     """Extract only the leading numeric identifier, stripping any appended title text.
     '1.Definizioni' → '1', '1.1' → '1.1', 'Art' → '', 'Art.5' → '', '2b' → '2b'"""
@@ -443,8 +455,7 @@ def build_neo4j_graph_payload(
             for i, chunk in enumerate(chunks):
                 chunk_section_name = f"{section_name}_{i}" if i > 0 else section_name
                 chunk_abstract = _trim_words(chunk, 200)
-                chunk_hash = stable_hash(chunk)
-                chunk_id = f"DOCUMENT_SECTION::{document_hash}::{chunk_hash[:20]}"
+                chunk_id = section_node_id(document_hash, chunk_section_name, chunk)
                 add_node(chunk_id, ["DOCUMENT_SECTION"], {
                     "id": chunk_id,
                     "name": chunk_section_name,
@@ -487,8 +498,7 @@ def build_neo4j_graph_payload(
         abstract = _trim_words(abstract, 200)
         section_abstracts.append(abstract)
 
-        section_hash = str(r.get("Hash", "")).strip() or stable_hash(plain_text)
-        section_id = f"DOCUMENT_SECTION::{document_hash}::{section_hash[:20]}"
+        section_id = section_node_id(document_hash, section_name, plain_text)
         section_key = (tipo, art, comma if tipo != "Articolo" else "")
         section_by_key[section_key] = section_id
 

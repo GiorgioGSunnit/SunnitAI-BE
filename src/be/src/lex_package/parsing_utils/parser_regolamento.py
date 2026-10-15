@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import re
 from dataclasses import dataclass, field
@@ -161,17 +162,18 @@ class ArticleBuilder:
     title: str
     article_code: str
     _raw_content: str = ""
-    hash_value: int = 0
+    hash_value: str = ""
 
     def add_line(self, line: str) -> None:
         self._raw_content += f"{line}\n"
-        self._update_hash()
 
     def _update_hash(self) -> None:
+        # sha256, not Python's hash(): that is salted per process, so the same
+        # article got a different hash (and node id) on every ingestion.
         if self._raw_content:
-            self.hash_value = hash(nojunkchars(self._raw_content))
+            self.hash_value = hashlib.sha256(nojunkchars(self._raw_content).encode("utf-8")).hexdigest()
         else:
-            self.hash_value = 0
+            self.hash_value = ""
 
     def to_dict(self) -> dict:
         self._update_hash()
