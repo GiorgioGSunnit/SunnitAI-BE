@@ -377,21 +377,42 @@ def _write_relationships_unlabelled(session, rows: list[dict]) -> int:
 
 def _write_relationships_batched(
     session, relationships: list[dict], id_to_labels: dict[str, list[str]]
-) -> int:
+) -> tuple[int, int, int]:
     """
     Write relationships, preferring a labelled MATCH (id unique index) for
     every endpoint whose label is known from the payload, falling back to
-    an unlabelled match for the rest. Returns total relationships written.
+    an unlabelled match for the rest.
+
+    Returns (rows_sent, rels_merged, rows_via_fallback):
+      - rows_sent: relationship dicts received (the payload's own count,
+        before any filtering — stable across code changes, so it's always
+        the right number to compare against a previous run's).
+      - rels_merged: sum of count(*) returned by every MERGE query, labelled
+        and fallback combined. This is "rows that matched/merged", not a
+        count of distinct relationships: a row whose endpoints match more
+        than one physical node sharing the same id (e.g. a leftover
+        duplicate-id node from a past failed ingestion — see
+        delete_document_by_id) is counted once per match, same as before
+        this function grouped by label. Switching to a labelled MATCH
+        removes exactly that kind of over-count for the labels with a real
+        id constraint, so this number dropping relative to an old unlabelled
+        total does not by itself mean relationships went missing — compare
+        rows_sent instead, or count relationships by type directly in the
+        graph.
+      - rows_via_fallback: rows whose endpoint had no known label and used
+        the slower, unlabelled match.
     """
+    rows_sent = len(relationships)
     written, unresolved = _write_relationships_labelled(session, relationships, id_to_labels)
+    rows_via_fallback = len(unresolved)
     if unresolved:
         logger.warning(
             "graph_writer: %d relationship(s) fell back to unlabelled match "
             "(endpoint not found among this payload's nodes)",
-            len(unresolved),
+            rows_via_fallback,
         )
         written += _write_relationships_unlabelled(session, unresolved)
-    return written
+    return rows_sent, written, rows_via_fallback
 
 
 def _normalize_title(title: str) -> str:
@@ -590,15 +611,21 @@ def write_graph_payload(payload: dict[str, Any]) -> tuple[int, int]:
                 for node in nodes
                 if node.get("id")
             }
-            rels_written = _write_relationships_batched(session, relationships, id_to_labels)
+            rel_rows_sent, rels_written, rel_rows_fallback = _write_relationships_batched(
+                session, relationships, id_to_labels
+            )
 
     finally:
         driver.close()
 
     logger.info(
-        "graph_writer: wrote %d nodes and %d relationships to Neo4J (%s).",
+        "graph_writer: wrote %d nodes and %d relationships to Neo4J (%s) "
+        "— relationship rows sent: %d, merged: %d, via unlabelled fallback: %d.",
         nodes_written,
         rels_written,
         os.environ.get("NEO4J_URI", ""),
+        rel_rows_sent,
+        rels_written,
+        rel_rows_fallback,
     )
     return nodes_written, rels_written

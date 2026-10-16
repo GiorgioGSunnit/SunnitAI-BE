@@ -69,9 +69,11 @@ def test_fresh_document_uses_labelled_match_for_everything_resolvable():
     resolve, so relationships touching it fall back to a labelled MATCH on
     LEGAL_DOC itself — which still has a real id constraint."""
     session = _FakeSession(doc_exists=False)
-    written = gw._write_relationships_batched(session, RELATIONSHIPS, ID_TO_LABELS)
+    rows_sent, merged, via_fallback = gw._write_relationships_batched(session, RELATIONSHIPS, ID_TO_LABELS)
 
-    assert written == len(RELATIONSHIPS)
+    assert rows_sent == len(RELATIONSHIPS)
+    assert merged == len(RELATIONSHIPS)
+    assert via_fallback == 1
 
     merge_queries = [q for q, _ in session.queries if "MERGE (a)-[r:" in q]
     assert any(":LEGAL_DOC {id: row.source_id}" in q for q in merge_queries)
@@ -88,9 +90,11 @@ def test_reingested_document_matches_by_elementid_not_label():
     still says LEGAL_DOC, but the node no longer carries that label. The
     writer must resolve its elementId and match by that, not by label."""
     session = _FakeSession(doc_exists=True, doc_elementid="doc-eid-999")
-    written = gw._write_relationships_batched(session, RELATIONSHIPS, ID_TO_LABELS)
+    rows_sent, merged, via_fallback = gw._write_relationships_batched(session, RELATIONSHIPS, ID_TO_LABELS)
 
-    assert written == len(RELATIONSHIPS)
+    assert rows_sent == len(RELATIONSHIPS)
+    assert merged == len(RELATIONSHIPS)
+    assert via_fallback == 1
 
     doc_sourced = [
         (q, p) for q, p in session.queries
@@ -118,7 +122,9 @@ def test_unresolvable_endpoint_skips_eid_resolution_query_when_no_doc_ids():
     only_section_rel = [{"type": "PART_OF", "source": SECTION_B, "target": SECTION_A}]
     labels = {SECTION_A: ["DOCUMENT_SECTION"], SECTION_B: ["DOCUMENT_SECTION"]}
 
-    written = gw._write_relationships_batched(session, only_section_rel, labels)
+    rows_sent, merged, via_fallback = gw._write_relationships_batched(session, only_section_rel, labels)
 
-    assert written == 1
+    assert rows_sent == 1
+    assert merged == 1
+    assert via_fallback == 0
     assert not any("elementId(n) AS eid" in q for q, _ in session.queries)
