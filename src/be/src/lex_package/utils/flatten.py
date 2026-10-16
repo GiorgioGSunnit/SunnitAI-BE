@@ -351,6 +351,11 @@ def build_neo4j_graph_payload(
     relationships.append({"type": "PUBLISHED", "source": doc_node_id, "target": source_id})
 
     seen_section_names: dict[str, int] = {}
+    # Texts kept so far per article, by how V2 finds them: "article" (name == art) and
+    # "zero" (name == "art.0.0"), both looked up by exact name; "sub" (name starts
+    # with "art."); "other" (e.g. "art_2").
+    kept_texts: dict[str, dict[str, set[str]]] = {}
+    skipped_empty = skipped_duplicate = 0
 
     for r in records:
         tipo = (r.get("Tipo") or "").strip()
@@ -437,6 +442,29 @@ def build_neo4j_graph_payload(
             section_name = f"{section_name}_{seen_section_names[section_name]}"
         else:
             seen_section_names[section_name] = 1
+
+        # Skip empty sections and repeated copies of a text this article already has
+        # (e.g. "93.1" and "93.1.0", or a footnote block emitted twice). The ids used to
+        # hash the text alone, which merged these silently; section_node_id includes
+        # the name, so they would now become separate nodes. The names V2 looks up
+        # exactly ("art", "art.0.0") are always kept, and a "sub" copy is dropped only
+        # when another name under "art." has the text, so every lookup by name still
+        # finds every distinct text. The skipped name is still counted above, so the
+        # names (and ids) of the sections that follow do not change.
+        norm_text = " ".join(plain_text.split())
+        if not norm_text:
+            skipped_empty += 1
+            continue
+        lookup = ("article" if section_name == art
+                  else "zero" if section_name == f"{art}.0.0"
+                  else "sub" if section_name.startswith(f"{art}.") else "other")
+        kept = kept_texts.setdefault(
+            art, {"article": set(), "zero": set(), "sub": set(), "other": set()})
+        if (lookup == "sub" and (norm_text in kept["sub"] or norm_text in kept["zero"])) or (
+                lookup == "other" and any(norm_text in texts for texts in kept.values())):
+            skipped_duplicate += 1
+            continue
+        kept[lookup].add(norm_text)
 
         references = _references_from_pagina(r.get("Pagina"))
 
@@ -525,6 +553,10 @@ def build_neo4j_graph_payload(
             }
         )
 
+    if skipped_empty or skipped_duplicate:
+        logger.info("flatten: skipped %d empty and %d duplicate section(s) of '%s'",
+                    skipped_empty, skipped_duplicate, document_name)
+
     for (tipo, art, comma), sec_id in section_by_key.items():
         if tipo == "Comma":
             parent = section_by_key.get(("Articolo", art, ""))
@@ -579,6 +611,8 @@ def build_neo4j_graph_payload(
             },
             "document_section_references_field": "references",
             "embedding_fallback_sections_count": embedding_fallback_count,
+            "sections_skipped_empty": skipped_empty,
+            "sections_skipped_duplicate": skipped_duplicate,
             "embedding_vector_note": (
                 "Il campo Vettore nel flatten replica Embedding Raw; spesso è vuoto se "
                 "gli embedding non sono abilitati (features.json embeddings_enabled), "
