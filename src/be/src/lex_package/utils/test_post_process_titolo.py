@@ -69,3 +69,20 @@ def test_combines_prefix_and_footnote_and_period():
 
 def test_collapses_double_spaces_left_by_stripped_markers():
     assert _clean_titolo_articolo("Reati  tributari") == "Reati tributari"
+
+
+# Real-world case from Codice Appalti (checked parser-only, no LLM, no DB —
+# this document's footnote markers are square brackets, not round parens).
+def test_strips_single_square_bracket_footnote_marker():
+    assert _clean_titolo_articolo("Principio del risultato. [4]") == "Principio del risultato"
+
+
+def test_strips_adjacent_square_bracket_footnote_markers():
+    assert (
+        _clean_titolo_articolo("Reputazione dell'impresa[280][281]")
+        == "Reputazione dell'impresa"
+    )
+
+
+def test_strips_mixed_round_and_square_footnote_markers():
+    assert _clean_titolo_articolo("Avvalimento (1)[266]") == "Avvalimento"

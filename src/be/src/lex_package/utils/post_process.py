@@ -327,14 +327,18 @@ _TITOLO_PREFIX_RE = re.compile(
     r"""^analisi\s+del\s+comma\s+dell['’]\s*articolo\s*[:\-]?\s*['"‘“]?(.*?)['"’”]?\s*$""",
     re.IGNORECASE,
 )
-# Footnote markers the parser leaves in titles, e.g. "Appalti pubblici (1) (6)".
-_TITOLO_FOOTNOTE_RE = re.compile(r"\(\s*\d{1,3}\s*\)")
+# Footnote markers the parser leaves in titles: "(1) (6)" in round parens
+# (the format Antonelo's handover named), but also "[4]", "[277][279]" in
+# square brackets — the only form actually seen on Codice Appalti (real-
+# world PDF with rubriche), checked with no LLM and no DB write against a
+# local copy of the PDF.
+_TITOLO_FOOTNOTE_RE = re.compile(r"\(\s*\d{1,3}\s*\)|\[\s*\d{1,3}\s*\]")
 
 
 def _clean_titolo_articolo(raw: str) -> str:
     """Clean the parser's "Titolo Articolo" for use as a Section title:
     unwrap "Analisi del comma dell'articolo '…'"-style prefixes, strip
-    footnote markers like "(1) (6)", and drop a trailing period."""
+    footnote markers like "(1) (6)" or "[4]", and drop a trailing period."""
     t = (raw or "").strip()
     if not t:
         return ""
