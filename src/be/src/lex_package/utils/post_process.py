@@ -322,6 +322,31 @@ def _clean_plain_text(text: str) -> str:
     return "\n".join(lines[skip_until:]).strip()
 
 
+# Wraps the real title, e.g. "Analisi del comma dell'articolo 'Definizioni'".
+_TITOLO_PREFIX_RE = re.compile(
+    r"""^analisi\s+del\s+comma\s+dell['’]\s*articolo\s*[:\-]?\s*['"‘“]?(.*?)['"’”]?\s*$""",
+    re.IGNORECASE,
+)
+# Footnote markers the parser leaves in titles, e.g. "Appalti pubblici (1) (6)".
+_TITOLO_FOOTNOTE_RE = re.compile(r"\(\s*\d{1,3}\s*\)")
+
+
+def _clean_titolo_articolo(raw: str) -> str:
+    """Clean the parser's "Titolo Articolo" for use as a Section title:
+    unwrap "Analisi del comma dell'articolo '…'"-style prefixes, strip
+    footnote markers like "(1) (6)", and drop a trailing period."""
+    t = (raw or "").strip()
+    if not t:
+        return ""
+    m = _TITOLO_PREFIX_RE.match(t)
+    if m:
+        t = m.group(1).strip()
+    t = _TITOLO_FOOTNOTE_RE.sub("", t)
+    t = re.sub(r"\s{2,}", " ", t).strip()
+    t = t.rstrip(".").strip()
+    return t
+
+
 # ── Step 2b ────────────────────────────────────────────────────────────────────
 
 def _step2b_fix_section_properties(session, document_hash: str) -> str:
@@ -474,26 +499,38 @@ def _step2b_fix_section_properties(session, document_hash: str) -> str:
                         "SET s.abstract = $abstract",
                         eid=row["eid"], abstract=enriched,
                     )
-            # Title generation — runs for every section unless a usable
-            # title can already be derived from the existing "- Title -"
-            # abstract pattern (cheap, no LLM call needed in that case).
-            current_abstract_for_title = row.get("abstract", "") or ""
-            existing_title_match = re.match(r"^-\s*(.+?)\s*-", current_abstract_for_title)
-            if not existing_title_match:
-                titolo = row.get("titolo_articolo", "") or ""
-                _base_num = _base_article_number(row.get("name", "") or "")
-                _base_text = base_article_text_map.get(_base_num, "")
-                generated_title = _generate_section_title(
-                    cleaned, row.get("name", "") or "", titolo,
-                    existing_abstract=current_abstract_for_title,
-                    base_article_text=_base_text,
+            # Title — prefer the parser's own "Titolo Articolo" (cleaned, no
+            # LLM call) over anything derived or generated. It is only
+            # missing for sections the parser didn't attach a title to
+            # (e.g. most Comma/Sottocomma fragments), where we fall back to
+            # a title already embedded in the abstract as "Heading - …"
+            # (flatten's format — see build_neo4j_graph_payload), and then
+            # to an LLM-generated title as a last resort.
+            cleaned_titolo = _clean_titolo_articolo(row.get("titolo_articolo", "") or "")
+            if cleaned_titolo:
+                session.run(
+                    "MATCH (s:Section) WHERE elementId(s) = $eid "
+                    "SET s.title = $title",
+                    eid=row["eid"], title=cleaned_titolo,
                 )
-                if generated_title:
-                    session.run(
-                        "MATCH (s:Section) WHERE elementId(s) = $eid "
-                        "SET s.title = $title",
-                        eid=row["eid"], title=generated_title,
+            else:
+                current_abstract_for_title = row.get("abstract", "") or ""
+                existing_title_match = re.match(r"^(.+?)\s-\s", current_abstract_for_title)
+                if not existing_title_match:
+                    titolo = row.get("titolo_articolo", "") or ""
+                    _base_num = _base_article_number(row.get("name", "") or "")
+                    _base_text = base_article_text_map.get(_base_num, "")
+                    generated_title = _generate_section_title(
+                        cleaned, row.get("name", "") or "", titolo,
+                        existing_abstract=current_abstract_for_title,
+                        base_article_text=_base_text,
                     )
+                    if generated_title:
+                        session.run(
+                            "MATCH (s:Section) WHERE elementId(s) = $eid "
+                            "SET s.title = $title",
+                            eid=row["eid"], title=generated_title,
+                        )
         logger.debug("post_process step2b: cleaned plain_text for %d sections", len(rows))
 
         # Clear embeddings so Step 3 re-generates with clean text

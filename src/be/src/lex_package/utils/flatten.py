@@ -493,6 +493,7 @@ def build_neo4j_graph_payload(
                     "references": references,
                     "vettore": [],
                     "embedding_dim": None,
+                    "titolo_articolo": titolo_articolo,
                 })
                 relationships.append({
                     "type": "CONTAINS",
@@ -542,6 +543,7 @@ def build_neo4j_graph_payload(
                 "references": references,
                 "vettore": vec,
                 "embedding_dim": embedding_dim,
+                "titolo_articolo": titolo_articolo,
             },
         )
         relationships.append({"type": "CONTAINS", "source": doc_node_id, "target": section_id})
