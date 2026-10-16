@@ -189,14 +189,77 @@ def _write_nodes_batched(session, nodes: list[dict]) -> int:
     return total
 
 
-def _write_relationships_batched(session, relationships: list[dict]) -> int:
+def _resolve_document_elementids(session, ids: set[str]) -> dict[str, str]:
     """
-    Write relationships in UNWIND batches grouped by relationship type.
-    Returns total relationships written.
+    Resolve the current elementId of each Document node, label-agnostic.
+
+    A document's LEGAL_DOC node is relabeled to Document by post_process
+    after its first ingestion, but the payload rebuilt for a re-ingestion
+    still describes it as LEGAL_DOC. Matching those relationships by label
+    would silently miss the node (now Document) or need a label the fresh
+    document doesn't have yet (LEGAL_DOC). Resolving the elementId once,
+    without a label, sidesteps that — every relationship touching the
+    document is then matched by elementId instead of by label.
+    """
+    if not ids:
+        return {}
+    result = session.run(
+        "MATCH (n) WHERE n.id IN $ids RETURN n.id AS id, elementId(n) AS eid",
+        ids=list(ids),
+    ).data()
+    return {r["id"]: r["eid"] for r in result}
+
+
+def _endpoint_match(var: str, id_field: str, descriptor: tuple[str, str]) -> tuple[str, str | None]:
+    """
+    Build the MATCH pattern (and optional WHERE fragment) for one
+    relationship endpoint.
+
+    descriptor is ("label", "Label1:Label2") to match by id within a
+    label — letting the planner use that label's id unique index — or
+    ("eid", element_id) to match a specific node regardless of its
+    current label(s) (see _resolve_document_elementids). Returns
+    (pattern, where_fragment_or_None); the where fragment references a
+    query parameter named "{var}_eid" that the caller must bind.
+    """
+    kind, value = descriptor
+    if kind == "label":
+        for lbl in value.split(":"):
+            _validate_identifier(lbl, "label")
+        return f"({var}:{value} {{id: row.{id_field}}})", None
+    return f"({var})", f"elementId({var}) = ${var}_eid"
+
+
+def _write_relationships_labelled(
+    session, relationships: list[dict], id_to_labels: dict[str, list[str]]
+) -> tuple[int, list[dict]]:
+    """
+    Write relationships whose endpoints have a known label (from the
+    payload's own nodes), grouped by (type, source label, target label) so
+    MATCH can name a label and the planner can use that label's id unique
+    index (NodeUniqueIndexSeek) instead of scanning every label with an id
+    property.
+
+    Returns (written_count, rows_with_an_unresolvable_endpoint) — the
+    latter for the caller to retry with the unlabelled fallback.
     """
     from collections import defaultdict
 
-    by_type: dict[str, list[dict]] = defaultdict(list)
+    document_ids = {
+        node_id for node_id, labels in id_to_labels.items() if "LEGAL_DOC" in labels
+    }
+    doc_eid = _resolve_document_elementids(session, document_ids)
+
+    def _descriptor(node_id: str) -> tuple[str, str] | None:
+        if node_id in doc_eid:
+            return ("eid", doc_eid[node_id])
+        labels = id_to_labels.get(node_id)
+        if not labels:
+            return None
+        return ("label", ":".join(labels))
+
+    by_group: dict[tuple, list[dict]] = defaultdict(list)
+    unresolved: list[dict] = []
     for rel in relationships:
         rel_type = rel.get("type")
         source_id = rel.get("source")
@@ -205,11 +268,75 @@ def _write_relationships_batched(session, relationships: list[dict]) -> int:
             logger.warning("graph_writer: skipping incomplete relationship: %s", rel)
             continue
         props = _clean_props(rel.get("properties") or {})
-        by_type[rel_type].append({
-            "source_id": source_id,
-            "target_id": target_id,
-            "props": props,
-        })
+        row = {"source_id": source_id, "target_id": target_id, "props": props}
+
+        src_desc = _descriptor(source_id)
+        tgt_desc = _descriptor(target_id)
+        if src_desc is None or tgt_desc is None:
+            unresolved.append({**row, "type": rel_type})
+            continue
+        by_group[(rel_type, src_desc, tgt_desc)].append(row)
+
+    total = 0
+    for (rel_type, src_desc, tgt_desc), items in by_group.items():
+        try:
+            _validate_identifier(rel_type, "relationship type")
+            src_pattern, src_where = _endpoint_match("a", "source_id", src_desc)
+            tgt_pattern, tgt_where = _endpoint_match("b", "target_id", tgt_desc)
+        except ValueError as exc:
+            logger.warning("graph_writer: skipping %d relationships — %s", len(items), exc)
+            continue
+
+        where_parts = [w for w in (src_where, tgt_where) if w]
+        where_clause = f"WHERE {' AND '.join(where_parts)}" if where_parts else ""
+        params: dict[str, Any] = {}
+        if src_desc[0] == "eid":
+            params["a_eid"] = src_desc[1]
+        if tgt_desc[0] == "eid":
+            params["b_eid"] = tgt_desc[1]
+
+        for i in range(0, len(items), _BATCH_SIZE):
+            batch = items[i : i + _BATCH_SIZE]
+            result = session.run(
+                f"""
+                UNWIND $batch AS row
+                MATCH {src_pattern}, {tgt_pattern}
+                {where_clause}
+                MERGE (a)-[r:{rel_type}]->(b)
+                SET r += row.props
+                RETURN count(*) AS written
+                """,
+                batch=batch,
+                **params,
+            )
+            written = (result.single() or {}).get("written", 0)
+            skipped = len(batch) - written
+            if skipped > 0:
+                logger.warning(
+                    "graph_writer: %d relationships skipped (missing nodes) for type %s",
+                    skipped, rel_type,
+                )
+            elif skipped < 0:
+                logger.debug(
+                    "graph_writer: type %s written=%d batch=%d (cartesian product hit)",
+                    rel_type, written, len(batch),
+                )
+            total += written
+
+    return total, unresolved
+
+
+def _write_relationships_unlabelled(session, rows: list[dict]) -> int:
+    """
+    Fallback for relationships whose source or target id has no known label
+    (not among this payload's own nodes) — matches on id alone, across every
+    label, same as before the labelled-match path was added.
+    """
+    from collections import defaultdict
+
+    by_type: dict[str, list[dict]] = defaultdict(list)
+    for row in rows:
+        by_type[row["type"]].append(row)
 
     total = 0
     for rel_type, items in by_type.items():
@@ -239,8 +366,6 @@ def _write_relationships_batched(session, relationships: list[dict]) -> int:
                     skipped, rel_type,
                 )
             elif skipped < 0:
-                # count(*) > len(batch): cartesian product matched some nodes
-                # under multiple labels — relationships still written correctly.
                 logger.debug(
                     "graph_writer: type %s written=%d batch=%d (cartesian product hit)",
                     rel_type, written, len(batch),
@@ -248,6 +373,25 @@ def _write_relationships_batched(session, relationships: list[dict]) -> int:
             total += written
 
     return total
+
+
+def _write_relationships_batched(
+    session, relationships: list[dict], id_to_labels: dict[str, list[str]]
+) -> int:
+    """
+    Write relationships, preferring a labelled MATCH (id unique index) for
+    every endpoint whose label is known from the payload, falling back to
+    an unlabelled match for the rest. Returns total relationships written.
+    """
+    written, unresolved = _write_relationships_labelled(session, relationships, id_to_labels)
+    if unresolved:
+        logger.warning(
+            "graph_writer: %d relationship(s) fell back to unlabelled match "
+            "(endpoint not found among this payload's nodes)",
+            len(unresolved),
+        )
+        written += _write_relationships_unlabelled(session, unresolved)
+    return written
 
 
 def _normalize_title(title: str) -> str:
@@ -441,7 +585,12 @@ def write_graph_payload(payload: dict[str, Any]) -> tuple[int, int]:
             nodes_written = _write_nodes_batched(session, nodes)
 
             # ── Write relationships (batched) ─────────────────────────────────
-            rels_written = _write_relationships_batched(session, relationships)
+            id_to_labels = {
+                node["id"]: node.get("labels") or []
+                for node in nodes
+                if node.get("id")
+            }
+            rels_written = _write_relationships_batched(session, relationships, id_to_labels)
 
     finally:
         driver.close()
