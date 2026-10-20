@@ -363,11 +363,20 @@ def build_neo4j_graph_payload(
             continue
 
         art = str(r.get("Articolo", "")).strip()
+        # Codici approvati come allegato (parser_regolamento): gli articoli degli
+        # altri allegati e del decreto hanno un prefisso ("all2-", "decreto-")
+        # che deve restare nel nome, altrimenti collidono con quelli del codice.
+        _art_prefix = re.match(r'^(all\d+-|decreto-)', art, re.IGNORECASE)
+        _art_prefix = _art_prefix.group(1).lower() if _art_prefix else ""
         _art_match = re.search(
-            r'(\d+(?:[-\s]*(?:bis|ter|quater|quinquies|sexies|septies|octies|novies|decies))?)',
-            art, re.IGNORECASE,
+            # Longest forms first: identifiers have no spaces here
+            # ("452-terdecies-omessa…"), so "ter" must not win over "terdecies".
+            r'(\d+(?:[-\s]*(?:quattuordecies|septendecies|novendecies|terdecies|'
+            r'quindecies|sexdecies|octodecies|duodecies|undecies|quinquies|'
+            r'septies|quater|octies|novies|decies|sexies|vicies|bis|ter))?)',
+            art[len(_art_prefix):], re.IGNORECASE,
         )
-        art = _art_match.group(1).strip().rstrip('.') if _art_match else art
+        art = _art_prefix + _art_match.group(1).strip().rstrip('.') if _art_match else art
         if not art:
             titolo = str(r.get("Titolo Articolo", "")).strip()
             _titolo_num = re.match(r'^(\d+)[\.\s]', titolo)

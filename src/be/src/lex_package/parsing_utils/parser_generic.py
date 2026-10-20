@@ -29,6 +29,9 @@ _NUMBERED_HEADING_RE = re.compile(
     re.VERBOSE | re.IGNORECASE,
 )
 
+# Footnote markers ("[263]", "(12)") open a note, never a section.
+_FOOTNOTE_MARKER_RE = re.compile(r"^\s*(?:\[\d+\]|\(\d+\))")
+
 _SENTENCE_BOUNDARY_RE = re.compile(r"[.!?](?:\s|$)")
 
 
@@ -121,7 +124,7 @@ def _level1_title_blocks(pdf_path: str) -> list[dict]:
             text = block.get("text", "").strip()
             if not text:
                 continue
-            if block.get("type") == "title":
+            if block.get("type") == "title" and not _FOOTNOTE_MARKER_RE.match(text):
                 _flush()
                 section_title = text
                 section_page = page_num
@@ -169,7 +172,7 @@ def _level2_numbered_headings(pdf_path: str) -> list[dict]:
 
     for page_num, page in enumerate(doc, start=1):
         for line in extract_page_text(page).splitlines():
-            if _NUMBERED_HEADING_RE.match(line):
+            if _NUMBERED_HEADING_RE.match(line) and not _FOOTNOTE_MARKER_RE.match(line):
                 _flush()
                 section_title = line.strip()
                 section_page = page_num

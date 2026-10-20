@@ -28,9 +28,36 @@ ARTICLE_PATTERN = re.compile(
     r"novies|decies|undecies|duodecies|terdecies|quattuordecies|quindecies|"
     r"sexdecies|septendecies|octodecies|novendecies|vicies|unvicies|"
     r"duovicies|tervicies|quattuorvicies|quinvicies|sexvicies|septenvicies|"
-    r"octovicies|novenvicies|tricies))?\.?(?:\s*.+)?\s*$",
+    r"octovicies|novenvicies|tricies)\b)?\.?(?:\s*.+)?\s*$",
     re.IGNORECASE,
 )
+_ESTENSIONI = (
+    r"bis|ter|quater|quinquies|sexies|septies|octies|novies|decies|undecies|"
+    r"duodecies|terdecies|quattuordecies|quindecies|sexdecies|septendecies|"
+    r"octodecies|novendecies|vicies|unvicies|duovicies|tervicies|"
+    r"quattuorvicies|quinvicies|sexvicies|septenvicies|octovicies|novenvicies|tricies"
+)
+# Rubrica inline: "Art. 5 Definizioni" -> "Definizioni". L'estensione è una
+# delle forme latine note, non una parola qualsiasi (altrimenti "Art. 1
+# Approvazione del codice" perdeva "Approvazione").
+INLINE_TITLE_PATTERN = re.compile(
+    r"^(?:ART\.|Articolo)\s+\d+(?:[-\s]*(?:" + _ESTENSIONI + r")\b)?\.?\s*(.+)$",
+    re.IGNORECASE,
+)
+# Testi consolidati in cui il decreto approva un codice allegato (es. D.Lgs.
+# 104/2010, codice del processo amministrativo = Allegato 1): le rubriche sono
+# "Allegato 1 - Art. 112 ..." e la numerazione riparte in ogni allegato.
+ALLEGATO_ARTICLE_PATTERN = re.compile(
+    r"^Allegato\s+(?P<allegato>\d+)\s*[-\u2013\u2014]\s*(?P<articolo>(?:ART\.|Articolo)\s+\d+.*)$",
+    re.IGNORECASE,
+)
+# Intestazione nuda di un allegato, eventualmente con note: "Allegato 2 [371]".
+ALLEGATO_HEADING_PATTERN = re.compile(
+    r"^Allegato\s+\d+(?:\s*\[\d+\])*\s*$", re.IGNORECASE
+)
+MIN_ALLEGATO_ARTICLES = 3
+MAIN_ALLEGATO = 1
+
 ARTICLE_CODE_PATTERN = re.compile(
     r"\b(?:n\.\s*)?(?P<codice>\d{3,4}/\d{4})\b", flags=re.IGNORECASE
 )
@@ -198,6 +225,13 @@ class ArticleCollector:
     previous_number: int = 0
     previous_extension: int = ESTENSIONE_MAP[None]
     include_placeholders: bool = False
+    allegato: int | None = None
+
+    def enter_allegato(self, allegato: int) -> None:
+        """Ogni allegato ha la propria numerazione: si riparte da capo."""
+        self.allegato = allegato
+        self.previous_number = 0
+        self.previous_extension = ESTENSIONE_MAP[None]
 
     def start_article(
         self,
@@ -307,24 +341,67 @@ class RegulationParser:
             include_placeholders=self.include_placeholders,
         )
 
+        allegato_mode = self._has_allegato_articles(pages)
         for page_num, lines in enumerate(pages, start=1):
             self._process_page_lines(
                 collector,
                 [line for line in lines if line not in repeated_lookup],
                 page_num,
+                allegato_mode=allegato_mode,
             )
 
         return collector.finalize()
+
+    @staticmethod
+    def _has_allegato_articles(pages: Sequence[Sequence[str]]) -> bool:
+        count = 0
+        for lines in pages:
+            for line in lines:
+                if ALLEGATO_ARTICLE_PATTERN.match(line.strip()):
+                    count += 1
+                    if count >= MIN_ALLEGATO_ARTICLES:
+                        return True
+        return False
+
+    @staticmethod
+    def _allegato_identifier(match: re.Match, allegato: int | None) -> str:
+        """Identificativo canonico in modalità allegati: gli articoli dell'allegato
+        principale (il codice) sono "Art. N"; quelli degli altri allegati e del
+        decreto hanno un prefisso, così non collidono con quelli del codice."""
+        identifier = f"Art. {match.group('identificativo')}"
+        if match.group("estensione"):
+            identifier += f"-{match.group('estensione').lower()}"
+        if allegato is None:
+            return f"decreto-{identifier}"
+        if allegato != MAIN_ALLEGATO:
+            return f"all{allegato}-{identifier}"
+        return identifier
 
     def _process_page_lines(
         self,
         collector: ArticleCollector,
         lines: list[str],
         page_num: int,
+        allegato_mode: bool = False,
     ) -> None:
         title_pending = False
         for idx, line in enumerate(lines):
-            match = ARTICLE_PATTERN.search(line)
+            header = line
+            allegato = collector.allegato
+            if allegato_mode:
+                stripped = line.strip()
+                allegato_match = ALLEGATO_ARTICLE_PATTERN.match(stripped)
+                if allegato_match:
+                    allegato = int(allegato_match.group("allegato"))
+                    header = allegato_match.group("articolo")
+                elif ALLEGATO_HEADING_PATTERN.match(stripped):
+                    continue
+                elif collector.allegato is not None:
+                    # Dentro gli allegati solo "Allegato N - Art. X" apre un articolo.
+                    header = None
+            match = ARTICLE_PATTERN.search(header) if header is not None else None
+            if match and allegato != collector.allegato:
+                collector.enter_allegato(allegato)
             if collector.current and not match:
                 if title_pending:
                     title_pending = False
@@ -340,10 +417,7 @@ class RegulationParser:
                 )
 
                 if sequence.is_valid:
-                    inline_title_match = re.search(
-                        r'^(?:ART\.|Articolo)\s+\d+(?:[-\s]*\w+)?\.?\s*(.+)$',
-                        line, re.IGNORECASE,
-                    )
+                    inline_title_match = INLINE_TITLE_PATTERN.search(header)
                     title_line = (
                         inline_title_match.group(1).strip()
                         if inline_title_match
@@ -355,7 +429,11 @@ class RegulationParser:
                     collector.start_article(
                         sequence=sequence,
                         page=page_num,
-                        identifier_line=line,
+                        identifier_line=(
+                            self._allegato_identifier(match, allegato)
+                            if allegato_mode
+                            else line
+                        ),
                         title_line=title_line,
                         article_code=codicearticolo,
                     )
