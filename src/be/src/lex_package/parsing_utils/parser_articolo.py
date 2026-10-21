@@ -2,6 +2,8 @@ import hashlib
 import json
 import re
 
+from lex_package.parsing_utils.article_suffix import ORDINAL, SUFFIX
+
 
 def pulisci_e_converti(s):
     # Elimina tutto ciò che non è cifra (0-9)
@@ -207,38 +209,8 @@ def successivoConTipologia( ProgressivoPrecedente, EstensionePrecedente, identif
         "99": 99,
         "100": 100,
     }
-    estensioneLatino_map = {
-        None: 1,
-		"bis": 2,
-		"ter": 3,
-		"quater": 4,
-		"quinquies": 5,
-		"sexies": 6,
-		"septies": 7,
-		"octies": 8,
-		"novies": 9,
-		"decies": 10,
-		"undecies": 11,
-		"duodecies": 12,
-		"terdecies": 13,
-		"quattuordecies": 14,
-		"quindecies": 15,
-		"sexdecies": 16,
-		"septendecies": 17,
-		"octodecies": 18,
-		"novendecies": 19,
-		"vicies": 20,
-		"unvicies": 21,
-		"duovicies": 22,
-		"tervicies": 23,
-		"quattuorvicies": 24,
-		"quinvicies": 25,
-		"sexvicies": 26,
-		"septenvicies": 27,
-		"octovicies": 28,
-		"novenvicies": 29,
-		"tricies": 30
-	}
+    # Every spelling (nonies/novies, ...): article_suffix.py.
+    estensioneLatino_map = {None: 1, **ORDINAL}
 
     estensioneLettere_map = {
         "a": 1,
@@ -526,7 +498,7 @@ def parser_articolo(s) -> list[dict]:
     pattern = re.compile(
         r"(?:^|\n)\s*"  # inizio riga o newline + eventuali spazi
         r"(?P<identificativo>\d+|[a-z]{1,4})"  # numerico o lettere (1-4 lettere)
-        r"(?:\s*(?P<estensione>bis|ter|quater|quinquies|sexies|septies|octies|novies|decies))?"  # estensione latina opzionale
+        r"(?:\s*(?P<estensione>" + SUFFIX + r"))?"  # estensione latina opzionale, ogni grafia (article_suffix.py)
         r"(?P<simbolo>\.|\))\s+",  # punto o parentesi chiusa + spazio
         re.IGNORECASE | re.MULTILINE,
     )

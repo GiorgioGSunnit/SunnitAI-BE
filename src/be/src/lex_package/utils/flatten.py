@@ -2,6 +2,8 @@ from lex_package.utils.confronto_metadata import looks_like_document_metadata_qu
 from lex_package.utils.utils import extract_integer, concat_nested
 from lex_package.utils.utils_comparison import _first_non_empty, _section_contenuto_for_leaf
 from lex_package.parsing_utils.parser_articolo import nojunkchars, noforbiddenchars
+from lex_package.parsing_utils.article_suffix import SUFFIX, canonical_suffix
+from lex_package.parsing_utils.parser_regolamento import SEQUENCE_PREFIX_RE
 import hashlib
 import logging
 import re
@@ -366,17 +368,22 @@ def build_neo4j_graph_payload(
         # Codici approvati come allegato (parser_regolamento): gli articoli degli
         # altri allegati e del decreto hanno un prefisso ("all2-", "decreto-")
         # che deve restare nel nome, altrimenti collidono con quelli del codice.
-        _art_prefix = re.match(r'^(all\d+-|decreto-)', art, re.IGNORECASE)
+        # Stessa cosa per una seconda numerazione nello stesso PDF (preleggi,
+        # disposizioni di attuazione: "prel-", "att-", "seq2-").
+        _is_article_heading = bool(re.search(r'articolo|\bart\.', art, re.IGNORECASE))
+        _art_prefix = re.match(SEQUENCE_PREFIX_RE, art, re.IGNORECASE)
         _art_prefix = _art_prefix.group(1).lower() if _art_prefix else ""
         _art_match = re.search(
             # Longest forms first: identifiers have no spaces here
             # ("452-terdecies-omessa…"), so "ter" must not win over "terdecies".
-            r'(\d+(?:[-\s]*(?:quattuordecies|septendecies|novendecies|terdecies|'
-            r'quindecies|sexdecies|octodecies|duodecies|undecies|quinquies|'
-            r'septies|quater|octies|novies|decies|sexies|vicies|bis|ter))?)',
-            art[len(_art_prefix):], re.IGNORECASE,
+            # Every spelling, written in its canonical form (article_suffix.py).
+            # Glued to the next word only after a hyphen ("21-noniesannullamento"):
+            # without one, "52termini" is art. 52, not 52-ter.
+            rf'(\d+)(?:-\s*({SUFFIX})|\s*({SUFFIX})(?![a-z]))?', art[len(_art_prefix):], re.IGNORECASE,
         )
-        art = _art_prefix + _art_match.group(1).strip().rstrip('.') if _art_match else art
+        if _art_match:
+            _suffix = _art_match.group(2) or _art_match.group(3)
+            art = _art_prefix + _art_match.group(1) + (f"-{canonical_suffix(_suffix)}" if _suffix else "")
         if not art:
             titolo = str(r.get("Titolo Articolo", "")).strip()
             _titolo_num = re.match(r'^(\d+)[\.\s]', titolo)
@@ -404,7 +411,11 @@ def build_neo4j_graph_payload(
             r'regolamento\s+(?:UE|CE|generale)|direttiva|convenzione)\b',
             document_name, re.IGNORECASE,
         ))
-        if art and art.isdigit() and int(art) <= 20 and not _is_legal_code:
+        # Never for an article heading ("Art. 1", "Articolo 1"): its number is
+        # the article's, and a title in front ("giurisdizione_dei_giudici.1",
+        # c.p.c. arts. 1-20) hides it from lookup by number. _is_legal_code
+        # alone missed names like "xxx_Codice Civile" ("_" is a word character).
+        if art and art.isdigit() and int(art) <= 20 and not _is_legal_code and not _is_article_heading:
             # Build prefix from most specific available hierarchy level
             prefix = ""
             if _capitolo and not re.match(r'^\d+$', _capitolo):

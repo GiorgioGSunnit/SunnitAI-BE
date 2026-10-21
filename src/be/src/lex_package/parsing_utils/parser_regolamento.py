@@ -16,32 +16,55 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 from lex_package.utils.pdf_extract import extract_page_text
+from lex_package.parsing_utils.article_suffix import ORDINAL, SUFFIX, canonical_suffix
 
 # Ho riscritto il parser incapsulando gli stati in oggetti dedicati per eliminare
 # i side effect sparsi e rendere più prevedibile l'aggiunta dei placeholder.
 
 
+# Ogni grafia delle estensioni latine (nonies/novies, quaterdecies/quattuordecies,
+# ...), la più lunga per prima: article_suffix.py, la stessa tabella che V2 usa
+# per cercare gli articoli. L'identificativo scritto è sempre quello canonico.
 ARTICLE_PATTERN = re.compile(
-    r"^(?P<denominazione>ART\.|Articolo)\s+"
+    r"^(?P<denominazione>ART\.|Articolo)\s*"
     r"(?P<identificativo>\d+)"
-    r"(?:[-\s]*(?P<estensione>bis|ter|quater|quinquies|sexies|septies|octies|"
-    r"novies|decies|undecies|duodecies|terdecies|quattuordecies|quindecies|"
-    r"sexdecies|septendecies|octodecies|novendecies|vicies|unvicies|"
-    r"duovicies|tervicies|quattuorvicies|quinvicies|sexvicies|septenvicies|"
-    r"octovicies|novenvicies|tricies)\b)?\.?(?:\s*.+)?\s*$",
+    r"(?:[-\s]*(?P<estensione>" + SUFFIX + r")\b)?\.?(?:\s*.+)?\s*$",
     re.IGNORECASE,
 )
-_ESTENSIONI = (
-    r"bis|ter|quater|quinquies|sexies|septies|octies|novies|decies|undecies|"
-    r"duodecies|terdecies|quattuordecies|quindecies|sexdecies|septendecies|"
-    r"octodecies|novendecies|vicies|unvicies|duovicies|tervicies|"
-    r"quattuorvicies|quinvicies|sexvicies|septenvicies|octovicies|novenvicies|tricies"
-)
+_ESTENSIONI = SUFFIX[3:-1]
+# Una riga apre un articolo solo con la rubrica scritta "Art." / "ART." /
+# "Articolo" con l'iniziale maiuscola: un rinvio dentro una nota ("art. 409,
+# quinto comma, c.p.p. ...", c.p.p. 2026 p. 6) apriva un falso articolo 409, e
+# l'ordine della numerazione scartava poi tutte le rubriche vere da 35 a 408.
+_CAPITALISED_HEADING = re.compile(r"^(?:A[Rr][Tt]\.|A(?:RTICOLO|rticolo))\s*\d")
+# Dopo il numero (e l'estensione) una rubrica ha un punto, un trattino, una
+# parentesi, una maiuscola o niente; un rinvio continua con una virgola o una
+# parola minuscola ("art. 5 c.p.p.", "Art. 3, comma 2", "Art. 12 del decreto").
+_REFERENCE_TAIL = re.compile(r"^\s*(?:[,;:]|[a-zà-ÿ])")
+# ...salvo le parole con cui una rubrica dice che l'articolo non c'è più.
+_HEADING_TAIL_WORDS = re.compile(r"^\s*(?:abrogat|soppress|omissis)", re.IGNORECASE)
+
+
+def article_heading_match(line: str | None) -> re.Match | None:
+    """ARTICLE_PATTERN's match when the line is a real article heading: the
+    capitalised "Art." / "Articolo", and after the number (and estensione)
+    nothing that reads as a reference -- else None."""
+    if not line or not _CAPITALISED_HEADING.match(line):
+        return None
+    match = ARTICLE_PATTERN.search(line)
+    if not match:
+        return None
+    tail = line[match.end("estensione") if match.group("estensione") else match.end("identificativo"):]
+    if tail.startswith("."):
+        return match
+    if _REFERENCE_TAIL.match(tail) and not _HEADING_TAIL_WORDS.match(tail):
+        return None
+    return match
 # Rubrica inline: "Art. 5 Definizioni" -> "Definizioni". L'estensione è una
 # delle forme latine note, non una parola qualsiasi (altrimenti "Art. 1
 # Approvazione del codice" perdeva "Approvazione").
 INLINE_TITLE_PATTERN = re.compile(
-    r"^(?:ART\.|Articolo)\s+\d+(?:[-\s]*(?:" + _ESTENSIONI + r")\b)?\.?\s*(.+)$",
+    r"^(?:ART\.|Articolo)\s*\d+(?:[-\s]*(?:" + _ESTENSIONI + r")\b)?\.?\s*(.+)$",
     re.IGNORECASE,
 )
 # Testi consolidati in cui il decreto approva un codice allegato (es. D.Lgs.
@@ -58,6 +81,31 @@ ALLEGATO_HEADING_PATTERN = re.compile(
 MIN_ALLEGATO_ARTICLES = 3
 MAIN_ALLEGATO = 1
 
+# Una seconda numerazione nello stesso PDF (preleggi e poi codice civile; codice
+# e poi disposizioni di attuazione; decreto e poi allegato): un "Art. 1" senza
+# estensione, dopo un numero più alto, apre una nuova sequenza se una delle
+# righe non vuote che lo precedono è un'intestazione di struttura. Senza questo
+# l'ordine della numerazione scartava ogni rubrica della seconda sequenza (c.c.
+# 2026: gli artt. 1-31 del libro I finivano dentro l'art. 31 delle preleggi).
+# La sequenza con più articoli resta senza prefisso; le altre lo prendono dalla
+# loro intestazione (SEQUENCE_PREFIXES), così non collidono con il codice.
+SEQUENCE_CONTEXT_LINES = 6
+SEQUENCE_BOUNDARY_PATTERN = re.compile(
+    r"^\s*(?:CODICE|LIBRO|PARTE|TITOLO|CAPO|SEZIONE|ALLEGATO|DISPOSIZIONI|NORME|REGOLAMENTO|PREAMBOLO)\b"
+    r"|disposizioni (?:sulla legge|per l.attuazione|di attuazione|transitorie)|norme di attuazione"
+    r"|regolamento per l.esecuzione",
+    re.IGNORECASE,
+)
+SEQUENCE_PREFIXES = (
+    (re.compile(r"disposizioni sulla legge in generale|preleggi", re.IGNORECASE), "prel"),
+    (re.compile(r"attuazione", re.IGNORECASE), "att"),
+    (re.compile(r"regolamento|esecuzione", re.IGNORECASE), "reg"),
+    (re.compile(r"allegato", re.IGNORECASE), "all"),
+)
+# Every prefix an identificativo can carry (allegato mode's "allN-"/"decreto-"
+# included); utils/flatten.py keeps it in the Section name.
+SEQUENCE_PREFIX_RE = r"^((?:all\d+|decreto|prel\d*|att\d*|reg\d*|seq\d+)-)"
+
 ARTICLE_CODE_PATTERN = re.compile(
     r"\b(?:n\.\s*)?(?P<codice>\d{3,4}/\d{4})\b", flags=re.IGNORECASE
 )
@@ -72,38 +120,7 @@ DOC_CODE_FROM_STEM_PATTERN = re.compile(
 MAX_HEADING_LENGTH = 100
 DEFAULT_MIN_REPEATS = 5
 
-ESTENSIONE_MAP = {
-    None: 1,
-    "bis": 2,
-    "ter": 3,
-    "quater": 4,
-    "quinquies": 5,
-    "sexies": 6,
-    "septies": 7,
-    "octies": 8,
-    "novies": 9,
-    "decies": 10,
-    "undecies": 11,
-    "duodecies": 12,
-    "terdecies": 13,
-    "quattuordecies": 14,
-    "quindecies": 15,
-    "sexdecies": 16,
-    "septendecies": 17,
-    "octodecies": 18,
-    "novendecies": 19,
-    "vicies": 20,
-    "unvicies": 21,
-    "duovicies": 22,
-    "tervicies": 23,
-    "quattuorvicies": 24,
-    "quinvicies": 25,
-    "sexvicies": 26,
-    "septenvicies": 27,
-    "octovicies": 28,
-    "novenvicies": 29,
-    "tricies": 30,
-}
+ESTENSIONE_MAP = {None: 1, **ORDINAL}
 
 
 def _normalize_line(line):
@@ -190,6 +207,7 @@ class ArticleBuilder:
     article_code: str
     _raw_content: str = ""
     hash_value: str = ""
+    sequence: int = 0
 
     def add_line(self, line: str) -> None:
         self._raw_content += f"{line}\n"
@@ -226,6 +244,25 @@ class ArticleCollector:
     previous_extension: int = ESTENSIONE_MAP[None]
     include_placeholders: bool = False
     allegato: int | None = None
+    sequence: int = 0
+    sequence_contexts: dict[int, str] = field(default_factory=dict)
+    recent_lines: list[str] = field(default_factory=list)
+    pending_line: str | None = None
+
+    def note_line(self, line: str) -> None:
+        """The last few non-empty lines, for SEQUENCE_BOUNDARY_PATTERN."""
+        if line.strip():
+            self.recent_lines = (self.recent_lines + [line.strip()])[-SEQUENCE_CONTEXT_LINES:]
+
+    def restarts_sequence(self, sequence: "SequenceCheck") -> bool:
+        return (sequence.number == 1 and sequence.extension_value == ESTENSIONE_MAP[None]
+                and self.previous_number > 1
+                and any(SEQUENCE_BOUNDARY_PATTERN.search(line) for line in self.recent_lines))
+
+    def enter_sequence(self) -> None:
+        self.sequence += 1
+        self.previous_number = 0
+        self.previous_extension = ESTENSIONE_MAP[None]
 
     def enter_allegato(self, allegato: int) -> None:
         """Ogni allegato ha la propria numerazione: si riparte da capo."""
@@ -243,6 +280,7 @@ class ArticleCollector:
         article_code: str,
     ) -> None:
         self._finalize_current()
+        self.sequence_contexts.setdefault(self.sequence, " ".join(self.recent_lines))
         self._maybe_insert_placeholder(sequence.number, page)
         self.previous_number = sequence.number
         self.previous_extension = sequence.extension_value
@@ -253,6 +291,7 @@ class ArticleCollector:
             identifier=identifier_line,
             title=title_line,
             article_code=article_code,
+            sequence=self.sequence,
         )
 
     def _maybe_insert_placeholder(self, current_number: int, page: int) -> None:
@@ -273,6 +312,7 @@ class ArticleCollector:
                 "codicearticolo": "",
                 "contenuto": "",
                 "hash": 0,
+                "_sequence": self.sequence,
             }
             self.articles.append(placeholder)
 
@@ -282,12 +322,38 @@ class ArticleCollector:
 
     def _finalize_current(self) -> None:
         if self.current:
-            self.articles.append(self.current.to_dict())
+            self.articles.append({**self.current.to_dict(), "_sequence": self.current.sequence})
             self.current = None
 
     def finalize(self) -> list[dict]:
         self._finalize_current()
+        prefixes = self._sequence_prefixes()
+        for article in self.articles:
+            prefix = prefixes.get(article.pop("_sequence", 0), "")
+            if prefix:
+                article["identificativo"] = f"{prefix}-{article['identificativo']}"
         return self.articles
+
+    def _sequence_prefixes(self) -> dict[int, str]:
+        """{sequence: prefix} for every sequence but the one with the most
+        articles (the code itself, which keeps plain numbers)."""
+        sizes: dict[int, int] = {}
+        for article in self.articles:
+            sizes[article.get("_sequence", 0)] = sizes.get(article.get("_sequence", 0), 0) + 1
+        if len(sizes) < 2:
+            return {}
+        main = max(sizes, key=lambda seq: (sizes[seq], -seq))
+        prefixes: dict[int, str] = {}
+        for seq in sorted(sizes):
+            if seq == main:
+                continue
+            context = self.sequence_contexts.get(seq, "")
+            prefix = next((p for pattern, p in SEQUENCE_PREFIXES if pattern.search(context)), "seq")
+            if prefix == "all" or prefix in prefixes.values() or prefix == "seq":
+                prefix = f"{prefix}{seq + 1}"
+            prefixes[seq] = prefix
+        logger.info("Numbering sequences: %s articles each, main %d, prefixes %s", sizes, main, prefixes)
+        return prefixes
 
 
 class RegulationParser:
@@ -364,13 +430,24 @@ class RegulationParser:
         return False
 
     @staticmethod
+    def _canonical_identifier(match: re.Match) -> str:
+        """"Art. 21-nonies" for the heading "Art. 21 novies Annullamento ...":
+        the number and canonical estensione only, the title stays in "titolo".
+        The raw line, spaces later stripped by consolida_analisi, let flatten
+        read "Art. 52 Termini" as 52-ter."""
+        identifier = f"Art. {match.group('identificativo')}"
+        if match.group("estensione"):
+            identifier += f"-{canonical_suffix(match.group('estensione'))}"
+        return identifier
+
+    @staticmethod
     def _allegato_identifier(match: re.Match, allegato: int | None) -> str:
         """Identificativo canonico in modalità allegati: gli articoli dell'allegato
         principale (il codice) sono "Art. N"; quelli degli altri allegati e del
         decreto hanno un prefisso, così non collidono con quelli del codice."""
         identifier = f"Art. {match.group('identificativo')}"
         if match.group("estensione"):
-            identifier += f"-{match.group('estensione').lower()}"
+            identifier += f"-{canonical_suffix(match.group('estensione'))}"
         if allegato is None:
             return f"decreto-{identifier}"
         if allegato != MAIN_ALLEGATO:
@@ -386,6 +463,10 @@ class RegulationParser:
     ) -> None:
         title_pending = False
         for idx, line in enumerate(lines):
+            # One line late, across pages too: a heading is never its own context.
+            if collector.pending_line is not None:
+                collector.note_line(collector.pending_line)
+            collector.pending_line = line
             header = line
             allegato = collector.allegato
             if allegato_mode:
@@ -399,7 +480,7 @@ class RegulationParser:
                 elif collector.allegato is not None:
                     # Dentro gli allegati solo "Allegato N - Art. X" apre un articolo.
                     header = None
-            match = ARTICLE_PATTERN.search(header) if header is not None else None
+            match = article_heading_match(header)
             if match and allegato != collector.allegato:
                 collector.enter_allegato(allegato)
             if collector.current and not match:
@@ -408,6 +489,11 @@ class RegulationParser:
                 else:
                     collector.add_content(line)
 
+            if match and not allegato_mode and collector.current is not None:
+                probe = SequenceCheck(True, int(match.group("identificativo")),
+                                      _extension_cardinality(match.group("estensione")))
+                if collector.restarts_sequence(probe):
+                    collector.enter_sequence()
             if match:
                 sequence = validate_article_sequence(
                     collector.previous_number,
@@ -432,7 +518,7 @@ class RegulationParser:
                         identifier_line=(
                             self._allegato_identifier(match, allegato)
                             if allegato_mode
-                            else line
+                            else self._canonical_identifier(match)
                         ),
                         title_line=title_line,
                         article_code=codicearticolo,
